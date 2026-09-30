@@ -1,0 +1,139 @@
+
+╔════════════════════════════════════════════════════════════════╗
+║            TASK 1 - KEY GENERATION & SECURE STORAGE            ║
+║        Ed25519 signing pair + X25519 key-exchange pair         ║
+╚════════════════════════════════════════════════════════════════╝
+  [✓ PASS] libsodium 1.0.18 initialised
+
+▶ Generate key pairs
+──────────────────────────────────────────────────────────────────
+  [✓ PASS] Ed25519 signing pair generated      (public 32 B, secret 64 B)
+  [✓ PASS] X25519 key-exchange pair generated  (public 32 B, secret 32 B)
+  Ed25519 public key     bdc19984850c9b90… (32 bytes)
+  X25519 public key      c6fa095d3e8a9bc1… (32 bytes)
+  [ info ] Private key bytes are never printed.
+
+▶ Store keys  (open(O_CREAT, mode) + fchmod: no permission race)
+──────────────────────────────────────────────────────────────────
+  [✓ PASS] 4 key files written
+
+▶ Verify file permissions
+──────────────────────────────────────────────────────────────────
+  [✓ PASS] keys/server_pk.bin     -rw-r--r--  0644  public
+  [✓ PASS] keys/server_sk.bin     -rw-------  0600  PRIVATE
+  [✓ PASS] keys/server_kx_pk.bin  -rw-r--r--  0644  public
+  [✓ PASS] keys/server_kx_sk.bin  -rw-------  0600  PRIVATE
+
+▶ Reload private keys (loader test)
+──────────────────────────────────────────────────────────────────
+  [✓ PASS] Ed25519 secret key reloaded; test signature verifies with server_pk.bin
+  [✓ PASS] X25519 secret key reloaded; recomputed public key matches
+  [✓ PASS] Sensitive buffers wiped with sodium_memzero()
+
+╔════════════════════════════════════════════════════════════════╗
+║ libsodium initialised                                     PASS ║
+║ Key pairs generated                                       PASS ║
+║ Private keys stored as 0600                               PASS ║
+║ Key reload verified                                       PASS ║
+║ Secrets wiped from memory                                 PASS ║
+╚════════════════════════════════════════════════════════════════╝
+Keys generated and loaded OK
+total 0
+-rw-r--r-- 1 pratham_gosai pratham_gosai 32 Sep 30 15:38 server_kx_pk.bin
+-rw------- 1 pratham_gosai pratham_gosai 32 Sep 30 15:38 server_kx_sk.bin
+-rw-r--r-- 1 pratham_gosai pratham_gosai 32 Sep 30 15:38 server_pk.bin
+-rw------- 1 pratham_gosai pratham_gosai 64 Sep 30 15:38 server_sk.bin
+
+╔════════════════════════════════════════════════════════════════╗
+║              TASK 2 - KEY EXCHANGE & SESSION KEYS              ║
+║        X25519 via crypto_kx  +  Task 3 AEAD round-trip         ║
+╚════════════════════════════════════════════════════════════════╝
+
+  STATE  [ INIT ] → AUTH → SECURE → TERMINATE
+
+▶ INIT: each side creates an ephemeral X25519 key pair
+──────────────────────────────────────────────────────────────────
+  client public key      d72809cf6285e592… (32 bytes)
+  server public key      5c76b8439b498956… (32 bytes)
+  [ info ] Only the PUBLIC keys cross the network.
+
+  STATE  INIT → [ AUTH ] → SECURE → TERMINATE
+
+▶ AUTH: derive direction-specific session keys
+──────────────────────────────────────────────────────────────────
+client_tx == server_rx : YES
+client_rx == server_tx : YES
+client_tx == client_rx : NO (should be NO)
+  [✓ PASS] Client->server key agrees on both sides
+  [✓ PASS] Server->client key agrees on both sides
+  [✓ PASS] TX and RX keys differ (direction separation)
+  [ info ] Session key bytes are never printed - only compared.
+
+  STATE  INIT → AUTH → [ SECURE ] → TERMINATE
+
+▶ SECURE: Task 3 round-trip with ChaCha20-Poly1305
+──────────────────────────────────────────────────────────────────
+  [ info ] client seals seq=1: 18 B plaintext -> 54 B packet (20 header + 18 ct + 16 tag)
+Round-trip: "hello secure world"
+  [✓ PASS] Server decrypted and authenticated the message with server_rx
+  [✓ PASS] Reflection attack: packet bounced back to client -> rejected
+
+  STATE  INIT → AUTH → SECURE → [ TERMINATE ]
+  [✓ PASS] TERMINATE: ephemeral secrets and session keys wiped
+
+╔════════════════════════════════════════════════════════════════╗
+║                SECURE CHANNEL ATTACK TEST SUITE                ║
+║      ChaCha20-Poly1305-IETF · seq as AAD · replay window       ║
+╠════════════════════════════════════════════════════════════════╣
+║ ✓ Round-trip decrypts                              rc 0   PASS ║
+║ ✓ Tamper: flip ciphertext byte -> reject           rc -2  PASS ║
+║ ✓ AAD tamper: change seq -> reject                 rc -2  PASS ║
+║ ✓ Replay: second copy rejected                     rc -3  PASS ║
+║ ✓ Reorder: seq 3 then seq 2 -> seq 2 rejected      rc -3  PASS ║
+║ ✓ Wrong key -> reject                              rc -2  PASS ║
+║ ✓ Short packet -> reject                           rc -1  PASS ║
+║ ✓ Forged seq=1000 does not poison last_seq         rc 0   PASS ║
+╠════════════════════════════════════════════════════════════════╣
+║                        RESULT: 8/8 PASS                        ║
+╚════════════════════════════════════════════════════════════════╝
+  rc -1 short  ·  rc -2 auth fail  ·  rc -3 replay/reorder
+
+8 passed, 0 failed
+
+╔════════════════════════════════════════════════════════════════╗
+║         TASK 5 - ENCRYPTED KEY STORAGE (KEY WRAPPING)          ║
+║       Argon2id  ->  crypto_secretbox (XSalsa20-Poly1305)       ║
+╚════════════════════════════════════════════════════════════════╝
+
+▶ Wrap the private key under a passphrase
+──────────────────────────────────────────────────────────────────
+  [ info ] Key to wrap: keys/server_sk.bin (Task 1 key)
+  [ info ] Using built-in TEST-ONLY passphrases (not printed)
+  [✓ PASS] Wrapped with Argon2id + XSalsa20-Poly1305 (Argon2id took 103 ms on this machine)
+  [✓ PASS] keys/server_sk.wrapped stored as -rw-------
+
+╔════════════════════════════════════════════════════════════════╗
+║           WRAPPED KEY FILE  (keys/server_sk.wrapped)           ║
+╠════════════════════════════════════════════════════════════════╣
+║ salt   (Argon2id input, random)                           16 B ║
+║ nonce  (XSalsa20, random)                                 24 B ║
+║ MAC    (Poly1305 tag)                                     16 B ║
+║ ciphertext (encrypted Ed25519 secret key)                 64 B ║
+╠════════════════════════════════════════════════════════════════╣
+║ total                                                    120 B ║
+╚════════════════════════════════════════════════════════════════╝
+
+▶ Unwrap tests
+──────────────────────────────────────────────────────────────────
+Correct password: PASS (unwrapped)
+Wrong password  : PASS (rejected)
+Tampered file   : PASS (rejected)
+Fresh salt      : PASS (two wraps differ)
+  [✓ PASS] Secret key and derived keys wiped with sodium_memzero()
+
+╔════════════════════════════════════════════════════════════════╗
+║ Correct passphrase unwraps key                            PASS ║
+║ Wrong passphrase rejected                                 PASS ║
+║ Tampered wrapped file rejected                            PASS ║
+║ Random salt per wrap                                      PASS ║
+╚════════════════════════════════════════════════════════════════╝

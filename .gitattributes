@@ -1,0 +1,6 @@
+# Keep LF endings so the Makefile and shell script work in Linux/WSL
+# even when the repo is cloned on Windows.
+* text=auto eol=lf
+*.pdf  binary
+*.pptx binary
+*.png  binary

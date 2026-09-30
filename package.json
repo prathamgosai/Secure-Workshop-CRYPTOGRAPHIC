@@ -1,0 +1,17 @@
+{
+  "name": "secure-workshop",
+  "private": true,
+  "description": "Secure channel with libsodium. The cryptography is C (built and run in WSL); Node only runs the zero-dependency local dashboard bridge.",
+  "scripts": {
+    "dev": "node bridge/server.js",
+    "start": "node bridge/server.js --no-open",
+    "terminal": "wsl -d Ubuntu -- bash scripts/web_demo.sh",
+    "test": "wsl -d Ubuntu -- make test",
+    "check": "wsl -d Ubuntu -- make check && node bridge/test_integration.js",
+    "test:ui": "node bridge/test_integration.js",
+    "audit": "wsl -d Ubuntu -- make audit"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

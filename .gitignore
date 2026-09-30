@@ -1,0 +1,34 @@
+# binaries
+keygen
+kx_demo
+keywrap
+test_attacks
+secure_demo
+mitm_demo
+aead_bench
+sc_engine
+sc_server
+sc_client
+test_extended
+*.o
+*.exe
+
+# key material - private keys must never reach GitHub
+keys/*
+!keys/.gitkeep
+*.pem
+*.der
+*.key
+*.enc
+*.bin
+*.wrapped
+message.txt
+payment.txt
+tampered.txt
+openssl_demo/
+
+# editor / OS clutter
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

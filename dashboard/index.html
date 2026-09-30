@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secure Channel Command Center</title>
+  <meta name="description" content="Live dashboard for a libsodium secure channel: handshake, AEAD packets, attack lab, key vault, OpenSSL comparison and benchmarks, driven by the real C implementation.">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="8" cy="20" r="5"></circle>
+          <circle cx="32" cy="20" r="5"></circle>
+          <path d="M13 20h14" class="brand-link"></path>
+          <rect x="17" y="16" width="6" height="8" rx="1.5" class="brand-pkt"></rect>
+        </svg>
+        <div>
+          <div class="brand-title">SECURE CHANNEL</div>
+          <div class="brand-sub">CRYPTOGRAPHIC COMMAND CENTER</div>
+        </div>
+      </div>
+
+      <div class="sys">
+        <span class="eyebrow">SYSTEM STATUS</span>
+        <span id="sys-status" class="pill pill-muted"><i></i>CONNECTING</span>
+        <span id="sys-detail" class="sys-detail">starting engine…</span>
+      </div>
+
+      <div class="proto">
+        <span class="eyebrow">PROTOCOL STATE</span>
+        <ol id="state-track" class="state-track"></ol>
+      </div>
+
+      <div class="demo-controls" role="group" aria-label="Demo mode">
+        <button id="demo-start" class="btn btn-primary">▶ START DEMO</button>
+        <button id="demo-pause" class="btn" disabled>❚❚ PAUSE</button>
+        <button id="demo-next" class="btn">NEXT STEP ›</button>
+        <button id="demo-reset" class="btn btn-ghost">RESET</button>
+      </div>
+    </header>
+
+    <nav id="tabs" class="tabs" aria-label="Sections"></nav>
+
+    <div class="layout">
+      <main id="view" class="view" tabindex="-1"></main>
+      <aside class="rail" aria-label="Security event timeline">
+        <div class="rail-head">
+          <span>SECURITY EVENTS</span>
+          <span id="rail-count" class="rail-count">0</span>
+        </div>
+        <ol id="rail-events" class="rail-events"></ol>
+      </aside>
+    </div>
+
+    <div id="demo-bar" class="demo-bar" hidden>
+      <div class="demo-step"><span id="demo-num">1</span><small>/ <span id="demo-total">20</span></small></div>
+      <div class="demo-text">
+        <div id="demo-title" class="demo-title"></div>
+        <div id="demo-narration" class="demo-narration"></div>
+      </div>
+      <div class="demo-progress"><i id="demo-progress"></i></div>
+    </div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </div>
+</body>
+</html>
