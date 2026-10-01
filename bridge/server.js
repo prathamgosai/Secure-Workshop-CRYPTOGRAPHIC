@@ -143,6 +143,7 @@ function cleanText(t) {
 /* ---- TCP mode (sc_server / sc_client) ------------------------------------- */
 
 const tcp = { server: null, client: null, rekey: 0 };
+let toolchain = null;   // detected at start-up, after the build succeeds
 
 function pipeTcp(proc, role) {
   const rl = readline.createInterface({ input: proc.stdout });
@@ -335,6 +336,7 @@ const server = http.createServer(async (req, res) => {
       ok: true, engine: engine.ready, libsodium: engine.info?.libsodium || null,
       platform: IS_WIN ? `Windows → WSL (${DISTRO})` : process.platform,
       tcp: { server: !!tcp.server, client: !!tcp.client, port: TCP_PORT },
+      toolchain,
     });
   }
 
@@ -390,6 +392,14 @@ process.on('SIGTERM', shutdown);
     console.error('[bridge] build failed - fix the errors above and retry');
     process.exit(1);
   }
+  // Versions shown in the dashboard status bar: detected, never assumed.
+  const first = (r) => (r.code === 0 ? r.stdout.trim().split('\n')[0] : null);
+  const [gcc, sodium, ossl] = await Promise.all([
+    runC('gcc', ['-dumpfullversion'], 15000),
+    runC('pkg-config', ['--modversion', 'libsodium'], 15000),
+    runC('openssl', ['version'], 15000),
+  ]);
+  toolchain = { gcc: first(gcc), libsodium: first(sodium), openssl: first(ossl), build_ok: true, build_ts: Date.now() };
   startEngine();
   server.on('error', (e) => {
     console.error(`[bridge] cannot listen on 127.0.0.1:${PORT}: ${e.message}`);

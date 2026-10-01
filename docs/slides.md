@@ -44,7 +44,7 @@ client_tx = server_rx ✓ · client_rx = server_tx ✓ · client_tx ≠ client_r
 **Say:** "This is exactly what an eavesdropper sees: no key, no plaintext."
 
 ## 8 — Attack Lab (Task 4)
-**On screen:** 8 attacks → 7 blocked, 1 accepted as expected · required suite **8 passed, 0 failed** · extended suite 35/35 · integration 45/45
+**On screen:** 8 attacks → 7 blocked, 1 accepted as expected · required suite **8 passed, 0 failed** · extended suite 35/35 · integration 46/46
 **Visual:** `18-attack-lab-all8.png`
 **Say:** "The subtle one is the forged sequence number. If I stored the seq before checking the tag, one fake packet would block all real traffic. State changes only after authentication."
 

@@ -3,68 +3,79 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Secure Channel Command Center</title>
-  <meta name="description" content="Live dashboard for a libsodium secure channel: handshake, AEAD packets, attack lab, key vault, OpenSSL comparison and benchmarks, driven by the real C implementation.">
+  <title>Secure Channel — Cryptographic Security Command Center</title>
+  <meta name="description" content="Applied Cryptographic Design Lab: a libsodium secure channel with handshake, AEAD packets, attack lab, key vault, key wrapping, OpenSSL comparison and benchmarks, driven by the real C implementation.">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/app.css">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
+  <a class="skip btn btn-sm" href="#view">Skip to content</a>
   <div class="app">
-    <header class="topbar">
+    <aside class="side" aria-label="Primary">
       <div class="brand">
         <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
-          <circle cx="8" cy="20" r="5"></circle>
-          <circle cx="32" cy="20" r="5"></circle>
-          <path d="M13 20h14" class="brand-link"></path>
-          <rect x="17" y="16" width="6" height="8" rx="1.5" class="brand-pkt"></rect>
+          <rect x="1" y="1" width="38" height="38" rx="11" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.16)"/>
+          <circle cx="11" cy="20" r="4" fill="none" stroke="#66e6ff" stroke-width="1.8"/>
+          <circle cx="29" cy="20" r="4" fill="none" stroke="#66e6ff" stroke-width="1.8"/>
+          <path d="M15 20h10" stroke="#aab3c0" stroke-width="1.4" stroke-dasharray="2 2"/>
+          <rect x="17.5" y="16.5" width="5" height="7" rx="1.4" fill="#45d99a"/>
         </svg>
         <div>
           <div class="brand-title">SECURE CHANNEL</div>
-          <div class="brand-sub">CRYPTOGRAPHIC COMMAND CENTER</div>
+          <div class="brand-sub">Applied Cryptographic Design Lab</div>
         </div>
       </div>
+      <nav id="nav" class="nav" aria-label="Sections"></nav>
+      <div class="side-sys" id="side-sys" aria-label="System"></div>
+    </aside>
 
-      <div class="sys">
-        <span class="eyebrow">SYSTEM STATUS</span>
-        <span id="sys-status" class="pill pill-muted"><i></i>CONNECTING</span>
+    <header class="head">
+      <div class="head-ctx">
+        <span class="eyebrow" id="head-group">LAB</span>
+        <div class="head-title" id="head-title">Overview</div>
+      </div>
+      <div class="head-session" aria-label="Current session">
+        <span class="eyebrow">Current session</span>
+        <span id="sys-status" class="chip c-muted" role="status"><span class="g">○</span>CONNECTING</span>
+        <ol id="state-track" class="mini-track" aria-label="Protocol state"></ol>
         <span id="sys-detail" class="sys-detail">starting engine…</span>
       </div>
-
-      <div class="proto">
-        <span class="eyebrow">PROTOCOL STATE</span>
-        <ol id="state-track" class="state-track"></ol>
-      </div>
-
+      <div class="head-spacer"></div>
       <div class="demo-controls" role="group" aria-label="Demo mode">
-        <button id="demo-start" class="btn btn-primary">▶ START DEMO</button>
-        <button id="demo-pause" class="btn" disabled>❚❚ PAUSE</button>
-        <button id="demo-next" class="btn">NEXT STEP ›</button>
-        <button id="demo-reset" class="btn btn-ghost">RESET</button>
+        <button id="demo-start" class="btn btn-primary">Start demo</button>
+        <button id="demo-pause" class="btn" disabled>Pause</button>
+        <button id="demo-next" class="btn">Next step</button>
+        <button id="demo-reset" class="btn btn-ghost">Reset</button>
       </div>
     </header>
 
-    <nav id="tabs" class="tabs" aria-label="Sections"></nav>
-
-    <div class="layout">
+    <div class="main">
       <main id="view" class="view" tabindex="-1"></main>
       <aside class="rail" aria-label="Security event timeline">
         <div class="rail-head">
-          <span>SECURITY EVENTS</span>
+          <span class="eyebrow">Security events</span>
           <span id="rail-count" class="rail-count">0</span>
         </div>
         <ol id="rail-events" class="rail-events"></ol>
       </aside>
     </div>
 
-    <div id="demo-bar" class="demo-bar" hidden>
-      <div class="demo-step"><span id="demo-num">1</span><small>/ <span id="demo-total">20</span></small></div>
-      <div class="demo-text">
-        <div id="demo-title" class="demo-title"></div>
-        <div id="demo-narration" class="demo-narration"></div>
+    <footer class="foot" id="foot" aria-label="System status"></footer>
+
+    <section id="demo-panel" class="demo-panel" hidden aria-live="polite" aria-label="Demo mode">
+      <div class="demo-top">
+        <span class="chip c-info">Demo mode</span>
+        <span class="demo-stepno">STEP <span id="demo-num">01</span> <small>/ <span id="demo-total">20</span></small></span>
+        <span id="demo-title" class="demo-title"></span>
       </div>
-      <div class="demo-progress"><i id="demo-progress"></i></div>
-    </div>
+      <div class="demo-cols">
+        <div><div class="k">What just happened</div><div id="demo-narration" class="v"></div></div>
+        <div><div class="k">Why it matters</div><div id="demo-why" class="v muted"></div></div>
+        <div><div class="k">Security property</div><div id="demo-props" class="demo-props"></div></div>
+      </div>
+      <div id="demo-segs" class="demo-segs" aria-hidden="true"></div>
+    </section>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </div>
 </body>

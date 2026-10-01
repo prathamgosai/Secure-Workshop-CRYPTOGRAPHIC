@@ -21,7 +21,7 @@ This project is a secure communication channel written in C with [libsodium](htt
 - **Re-keying:** `crypto_kdf_derive_from_key`, on demand or every N messages, with old keys overwritten.
 - **TCP client/server:** localhost TCP (`sc_server` / `sc_client`) with a 4-byte length prefix, the INIT → AUTH → SECURE → TERMINATE states, the signed handshake and re-keying.
 - **AEAD benchmark:** ChaCha20-Poly1305 vs AES-256-GCM vs `seal()`, 64 B – 16 KiB, all measured.
-- **Web dashboard:** Overview, Handshake, Secure Channel, Packet Inspector, Attack Lab, Key Vault, OpenSSL Compare, Benchmarks, Logs, Limitations, plus a 20-step **Demo Mode**.
+- **Web dashboard:** a static (animation-free) liquid-glass console with Overview, Handshake, Secure Channel, Packet Inspector, Attack Lab, Test Center, Key Vault, Key Wrapping, OpenSSL Compare, Benchmarks, Logs and Limitations, plus a 20-step **Demo Mode**.
 - **Terminal demo:** `secure_demo` (menu, guided tour, audit), for presenting without a browser.
 
 ## Architecture
@@ -44,7 +44,7 @@ This project is a secure communication channel written in C with [libsodium](htt
 | Network (C) | `src/net.c`, `tcp_server.c`, `tcp_client.c` | Localhost TCP with length-prefixed frames |
 | Bridge (Node, no dependencies) | `bridge/server.js` | Serves the dashboard and runs the binaries through WSL, with validation and anti-CSRF |
 | Dashboard | `dashboard/` | Views, demo mode, SVG charts |
-| Tests | `tests/`, `bridge/test_integration.js` | Required 8, extended 35, integration 45 |
+| Tests | `tests/`, `bridge/test_integration.js` | Required 8, extended 35, integration 46 |
 
 **Secrets never leave C.** The engine holds session keys in `sodium_malloc()` memory and emits only public keys, nonces, ciphertext, return codes, file metadata and one-way 8-byte BLAKE2b fingerprints. The integration test scans every API response for private-key bytes and passphrases.
 
@@ -101,7 +101,7 @@ Measured on Ubuntu (WSL2), gcc 15.2.0, libsodium 1.0.18, OpenSSL 3.5.5, Node 24:
 | Required (brief) | `make test` | **8 passed, 0 failed** + all Task 1/2/5 checkpoints |
 | Extended | `./test_extended` | **35 passed, 0 failed** (packets, key files, wrapping, state machine, re-key, handshake) |
 | OpenSSL | `make openssl` | all steps as expected (CBC tamper undetected, AEAD rejects) |
-| UI/backend integration | `npm run test:ui` | **45 passed, 0 failed** (security controls, all APIs, TCP, secret-leak scan) |
+| UI/backend integration | `npm run test:ui` | **46 passed, 0 failed** (security controls, static stylesheet, all APIs, TCP, secret-leak scan) |
 
 Captured output: [docs/output.txt](docs/output.txt).
 
@@ -194,7 +194,7 @@ secure-workshop/
 │               keygen.c kx_demo.c keywrap.c mitm_demo.c benchmark.c demo.c engine.c
 │               net.c/h tcp_server.c tcp_client.c
 ├── tests/      test_attacks.c (required 8) · test_extended.c (35)
-├── bridge/     server.js (local API) · test_integration.js (45)
+├── bridge/     server.js (local API) · test_integration.js (46)
 ├── dashboard/  index.html · css/app.css · js/{app,api,store,ui,demo}.js · js/views/*.js
 ├── scripts/    openssl_compare.sh · web_demo.sh
 ├── keys/       generated keys (never committed; only .gitkeep)

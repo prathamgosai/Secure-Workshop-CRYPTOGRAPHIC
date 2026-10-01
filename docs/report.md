@@ -91,7 +91,7 @@ Example from a real run of the demo, with message `"Meet at the library at 10:00
 | `src/net.c`, `src/tcp_server.c`, `src/tcp_client.c` | Stretch challenge 1: localhost TCP client/server (with stretch 3, re-keying) |
 | `src/engine.c`, `src/json.c` | `sc_engine`: machine-readable interface used by the dashboard |
 | `src/demo.c`, `src/ui.c` | Terminal presentation demo and formatting |
-| `tests/test_extended.c`, `bridge/test_integration.js` | Extended C tests (35) and UI/backend integration tests (45) |
+| `tests/test_extended.c`, `bridge/test_integration.js` | Extended C tests (35) and UI/backend integration tests (46) |
 | `bridge/server.js`, `dashboard/` | Local web dashboard ("Cryptographic Command Center") |
 
 Everything is built by one `Makefile` with `-Wall -Wextra -Wpedantic -Wshadow -Wformat=2 -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2`. The build produces **zero warnings**.
@@ -263,7 +263,7 @@ All four optional stretch challenges were implemented after the required tasks w
 
 **Benchmark (stretch 4).** `aead_bench --json` measures ChaCha20-Poly1305, AES-256-GCM (only if the CPU supports it) and `seal()` from 64 B to 16 KiB, for about 120 ms per data point.
 
-**Dashboard.** `sc_engine` holds a live session in `sodium_malloc()` memory. It reads one command per line and writes one JSON object per line, containing only public data: public keys, nonces, ciphertext, return codes, file modes, and 8-byte BLAKE2b fingerprints under a fixed domain key. A zero-dependency Node bridge serves the dashboard on 127.0.0.1 only. It whitelists and validates every command, requires a custom header on every POST (so other websites cannot drive it), checks the `Host` header against DNS rebinding, and sends a strict Content-Security-Policy. The dashboard has views for the handshake, the live channel, packet inspection, the eight attacks, the key vault and wrapping lab, the OpenSSL comparison, benchmarks, logs and limitations. A 20-step Demo Mode runs the whole presentation against the real binaries. Every PASS/BLOCKED label is a return code from C. Nothing is precomputed.
+**Dashboard.** `sc_engine` holds a live session in `sodium_malloc()` memory. It reads one command per line and writes one JSON object per line, containing only public data: public keys, nonces, ciphertext, return codes, file modes, and 8-byte BLAKE2b fingerprints under a fixed domain key. A zero-dependency Node bridge serves the dashboard on 127.0.0.1 only. It whitelists and validates every command, requires a custom header on every POST (so other websites cannot drive it), checks the `Host` header against DNS rebinding, and sends a strict Content-Security-Policy. The dashboard has views for the handshake, the live channel, packet inspection, the eight attacks, a test center, the key vault, key wrapping, the OpenSSL comparison, benchmarks, logs and limitations. It is deliberately static: no animations or transitions. A 20-step Demo Mode runs the whole presentation against the real binaries. Every PASS/BLOCKED label is a return code from C. Nothing is precomputed.
 
 ![Overview](screenshots/01-overview-initial.png)
 ![Handshake lab with session-key fingerprints](screenshots/03-handshake.png)
@@ -283,7 +283,7 @@ All results below come from real runs on Ubuntu under WSL2 with gcc 15.2.0, GNU 
 | `make mitm` | stretch 2 | MITM shown on plain kx; blocked with signatures |
 | TCP (`sc_server`/`sc_client`) | stretch 1 + 3 over real sockets | tamper and replay rejected, re-key in sync, impostor blocked |
 | `make audit` | 16-row terminal security audit | all checks pass |
-| `npm run test:ui` | bridge security controls, every API, all 8 live attacks, TCP, secret-leak scan | 45 passed, 0 failed |
+| `npm run test:ui` | bridge security controls, every API, all 8 live attacks, TCP, secret-leak scan | 46 passed, 0 failed |
 
 The complete captured output of `make test` is in `docs/output.txt`.
 

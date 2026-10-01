@@ -87,7 +87,10 @@ async function main() {
     console.log('\n  -- security controls');
     const page = await fetch(`${BASE}/`);
     const html = await page.text();
-    check('dashboard page served', page.status === 200 && html.includes('CRYPTOGRAPHIC COMMAND CENTER'));
+    check('dashboard page served', page.status === 200 && html.includes('Cryptographic Security Command Center'));
+    const css = await (await fetch(`${BASE}/css/app.css`)).text();
+    check('dashboard stylesheet is static (no @keyframes, no transitions)',
+      !/@keyframes/.test(css) && !/transition\s*:(?!\s*none)/.test(css) && !/animation\s*:(?!\s*none)/.test(css));
     check('Content-Security-Policy restricts scripts to same origin', /script-src 'self'/.test(page.headers.get('content-security-policy') || ''));
     check('POST without dashboard header rejected (403)', (await post('/api/engine', { cmd: 'hello' }, { 'X-SC-Client': 'x' })).status === 403);
     check('foreign Host header rejected (DNS-rebinding guard, 421)', (await rawRequest({ path: '/api/health', headers: { Host: 'evil.example:8799' } })) === 421);

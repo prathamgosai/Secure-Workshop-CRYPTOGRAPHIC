@@ -1,76 +1,68 @@
 import { store, run } from '../store.js';
-import { esc, busy, emptyState, $ } from '../ui.js';
+import { esc, busy, chip, emptyState, pageHead, panelHead, $ } from '../ui.js';
 
 const ROWS = [
-  ['KEY FORMAT', 'Raw bytes: 32 B public, 64 B Ed25519 secret (seed ‖ public key)', 'PKCS#8 / SubjectPublicKeyInfo (ASN.1 DER)'],
-  ['ENCODING', 'Binary .bin files, no headers', 'PEM: Base64 between -----BEGIN/END----- lines'],
-  ['ENCRYPTION', 'ChaCha20 (inside ChaCha20-Poly1305 AEAD)', 'aes-256-cbc as used in the brief'],
-  ['INTEGRITY', 'Poly1305 tag over ciphertext + AAD', 'None in CBC mode — no tag'],
-  ['AUTHENTICATION', 'Tag verification fails for any change or wrong key', 'Not provided by openssl enc (CBC)'],
-  ['KDF', 'Argon2id (memory-hard)', 'PBKDF2 with -pbkdf2 (CPU-hard only)'],
-  ['PASSWORD PROTECTION', 'Optional Argon2id + secretbox key wrap', 'Unencrypted by default; optional passphrase cipher'],
-  ['CONFIGURATION', 'Few choices, safe defaults', 'Many modes and options to choose from'],
-  ['MISUSE RESISTANCE', 'High: hard to pick an unauthenticated mode', 'Lower: easy to pick a mode without integrity'],
+  ['Key format', 'Raw bytes — 32 B public, 64 B Ed25519 secret (seed ‖ public key)', 'PKCS#8 / SubjectPublicKeyInfo (ASN.1 DER)'],
+  ['Encoding', 'Binary .bin files, no headers', 'PEM — Base64 between BEGIN / END lines'],
+  ['Encryption', 'ChaCha20-Poly1305-IETF (AEAD)', 'aes-256-cbc, as used in the brief&rsquo;s <code>openssl enc</code> workflow'],
+  ['Authentication', '16-byte Poly1305 tag over ciphertext + AAD; decryption fails on any change', 'No integrated tag in CBC mode; a separate MAC would be required'],
+  ['Password KDF', 'Argon2id — memory-hard, 64 MiB', 'PBKDF2 via <code>-pbkdf2</code> — iterated hash'],
+  ['Key protection', 'File mode 0600; optional Argon2id + secretbox wrap', 'Private PEM written 0600 (observed); unencrypted unless a passphrase cipher is chosen'],
+  ['API surface', 'Small set of high-level functions with fixed algorithms', 'Many modes and options; algorithm choice left to the caller'],
 ];
 
 function evidence(o) {
-  if (!o) return emptyState('Run the comparison to see real results from <code>scripts/openssl_compare.sh</code>.', '<button class="btn btn-primary" data-a="run">RUN COMPARISON</button>');
-  if (!o.cbc) return `<div class="bad">${esc(o.error || 'comparison failed')}</div>`;
+  if (!o) return emptyState('Run the comparison to see real results from <code>scripts/openssl_compare.sh</code>: an encrypted payment instruction, one changed ciphertext byte, and what each tool does with it.', '<button class="btn btn-primary" data-a="run">Run comparison</button>');
+  if (!o.cbc) return `<div class="alert" role="alert"><b>COMPARISON FAILED</b><span>${esc(o.error || 'the script did not report results')}</span></div>`;
   const c = o.cbc;
-  const orig = esc(c.original);
   const tampered = esc(c.tampered_block1).replace('90100', '<mark>9</mark>0100');
   return `
     <div class="evidence">
-      <div class="box"><div class="faint small">ORIGINAL PLAINTEXT</div>${orig}</div>
-      <div class="muted mono small" style="text-align:center">1 ciphertext byte<br>XOR ${esc(c.xor)} @ ${c.byte_offset}<br>→</div>
-      <div class="box"><div class="faint small">DECRYPTED AFTER TAMPERING (block 1)</div>${tampered}<div class="faint small" style="margin-top:6px">block 0 garbled: ${esc(c.garbled_block0_hex)}…</div></div>
+      <div class="box"><span class="k">Original plaintext</span>${esc(c.original)}</div>
+      <div class="op">1 ciphertext byte<br>XOR ${esc(c.xor)} @ ${c.byte_offset}<br>→</div>
+      <div class="box"><span class="k">Decrypted after tampering · block 1</span>${tampered}<div class="faint small" style="margin-top:8px">block 0 garbled: ${esc(c.garbled_block0_hex)}…</div></div>
     </div>
-    <div class="grid" style="margin-top:14px">
+    <div class="grid" style="margin-top:20px">
       <div class="s6"><div class="kv">
-        <div>OPENSSL EXIT CODE</div><div class="mono">${c.openssl_exit} ${c.openssl_exit === 0 ? '<span class="warn">(reported success)</span>' : ''}</div>
-        <div>TAMPER DETECTED?</div><div>${c.tamper_undetected ? '<span class="badge b-warn">NO — ALTERED PLAINTEXT ACCEPTED</span>' : '<span class="badge b-muted">—</span>'}</div>
-        <div>SAME ATTACK ON AEAD</div><div>${o.aead_tamper_rejected ? '<span class="badge b-ok">✕ REJECTED (rc -2)</span>' : '<span class="badge b-muted">not checked</span>'}</div>
+        <div>OpenSSL exit code</div><div class="mono">${c.openssl_exit} ${c.openssl_exit === 0 ? '<span class="faint">(reported success)</span>' : ''}</div>
+        <div>Tamper detected · CBC</div><div>${c.tamper_undetected ? chip('WARNING', { text: 'No — altered plaintext returned' }) : chip('UNKNOWN')}</div>
+        <div>Same change · AEAD</div><div>${o.aead_tamper_rejected ? chip('REJECTED', { text: 'Rejected · rc −2' }) : chip('NOT RUN', { text: 'Not checked' })}</div>
       </div></div>
       <div class="s6"><div class="kv">
-        <div>TOOL</div><div class="mono">${esc(o.openssl_version)}</div>
-        <div>ED25519 PRIVATE (DER)</div><div class="mono">${o.ed25519_priv_der_bytes} B PKCS#8 vs 64 B raw</div>
-        <div>ED25519 PUBLIC (DER)</div><div class="mono">${o.ed25519_pub_der_bytes} B SPKI vs 32 B raw</div>
-        <div>PRIVATE PEM MODE</div><div class="mono">${esc(o.priv_pem_mode)}</div>
-        <div>ROUND-TRIP</div><div>${o.roundtrip_ok ? '<span class="ok">✓ encrypt/decrypt works</span>' : '<span class="bad">✕</span>'}</div>
+        <div>Tool</div><div class="mono">${esc(o.openssl_version)}</div>
+        <div>Ed25519 private · DER</div><div class="mono">${o.ed25519_priv_der_bytes} B PKCS#8 <span class="faint">vs 64 B raw</span></div>
+        <div>Ed25519 public · DER</div><div class="mono">${o.ed25519_pub_der_bytes} B SPKI <span class="faint">vs 32 B raw</span></div>
+        <div>Private PEM mode</div><div class="mono">${esc(o.priv_pem_mode)}</div>
+        <div>CBC round-trip</div><div>${o.roundtrip_ok ? chip('PASS', { text: 'Encrypt / decrypt works' }) : chip('FAILED')}</div>
       </div></div>
     </div>
-    <div class="card-title" style="margin:16px 0 8px">ED25519 PUBLIC KEY (PEM) — private key never shown</div>
+    <div class="panel-title" style="margin:24px 0 10px">Ed25519 public key · PEM <span class="faint">— private key never shown</span></div>
     <pre class="pem">${esc(o.ed25519_pub_pem)}</pre>`;
 }
 
 export default {
   id: 'openssl',
   label: 'OpenSSL Compare',
+  icon: 'openssl',
   mount(root) {
     root.innerHTML = `
-      <div class="page-head">
-        <div><h1>LIBSODIUM vs OPENSSL CLI</h1><p>Compares this project with the OpenSSL command-line workflow from the brief. OpenSSL the library supports AEAD modes; the limitation shown here is the <code>openssl enc</code> CBC workflow, not OpenSSL itself.</p></div>
-        <div class="actions"><button class="btn btn-primary" data-a="run">RUN COMPARISON</button></div>
+      ${pageHead('Task 6 · Toolchain comparison', 'Cryptographic toolchain comparison', 'This project&rsquo;s libsodium implementation beside the OpenSSL command-line workflow from the brief. OpenSSL&rsquo;s library also offers AEAD modes through its C API; the behaviour shown here belongs to the <code>openssl enc</code> CBC workflow.',
+        '<button class="btn btn-primary" data-a="run">Run comparison</button>')}
+      <section class="compare" aria-label="libsodium versus OpenSSL CLI">
+        <div class="h"></div>
+        <div class="h a"><span>This project</span><b>libsodium</b></div>
+        <div class="h b"><span>Brief workflow</span><b>OpenSSL CLI</b></div>
+        ${ROWS.map(([k, a, b]) => `<div class="k">${k}</div><div class="a">${a}</div><div class="b">${b}</div>`).join('')}
+      </section>
+      <div class="cipher-cmp section">
+        <div class="cc"><span class="eyebrow">OpenSSL CLI · as used in the brief</span><h3>AES-256-CBC</h3>
+          <div class="props-inline">${chip('PROTECTED', { text: 'Confidentiality' })}${chip('NOT RUN', { text: 'No integrated tag', glyph: '—' })}</div>
+          <p>Flipping a bit in ciphertext block i flips the same bit in plaintext block i+1 and garbles block i. Without a separate MAC, the change is not detected at decryption time.</p></div>
+        <div class="cc"><span class="eyebrow">libsodium · this project</span><h3>ChaCha20-Poly1305</h3>
+          <div class="props-inline">${chip('PROTECTED', { text: 'Confidentiality' })}${chip('PROTECTED', { text: 'Integrity' })}${chip('PROTECTED', { text: 'Authenticity' })}</div>
+          <p>An AEAD: decryption returns nothing unless the 16-byte Poly1305 tag over ciphertext and AAD verifies. AES-256-GCM provides the same class of guarantee.</p></div>
       </div>
-      <div class="grid">
-        <section class="card s12">
-          <div class="vs">
-            <div class="h"></div><div class="h sod">LIBSODIUM IMPLEMENTATION</div><div class="h ossl">OPENSSL CLI</div>
-            ${ROWS.map(([k, a, b]) => `<div class="k">${k}</div><div class="sod">${esc(a)}</div><div class="ossl">${esc(b)}</div>`).join('')}
-          </div>
-        </section>
-        <section class="card s12"><div class="cipher-cmp">
-          <div class="cc warnbox"><h4>AES-256-CBC</h4><span class="down">↓</span>
-            <div class="props-inline"><span class="badge b-ok">CONFIDENTIALITY</span></div>
-            <div class="small warn" style="font-weight:700;letter-spacing:.12em">BUT</div>
-            <div class="props-inline"><span class="badge b-warn">NO BUILT-IN AUTHENTICATION TAG</span></div>
-            <p class="small muted">Flipping a bit in ciphertext block i flips the same bit in plaintext block i+1. Unauthenticated CBC is also exposed to padding-oracle attacks.</p></div>
-          <div class="cc goodbox"><h4>ChaCha20-Poly1305</h4><span class="down">↓</span>
-            <div class="props-inline"><span class="badge b-ok">CONFIDENTIALITY</span>+<span class="badge b-ok">INTEGRITY</span>+<span class="badge b-ok">AUTHENTICITY</span></div>
-            <p class="small muted">An AEAD: decryption returns nothing unless the 16-byte Poly1305 tag over ciphertext and AAD verifies. AES-256-GCM would give the same guarantees.</p></div>
-        </div></section>
-        <section class="card s12"><div class="card-head"><div><div class="card-title">LIVE EVIDENCE — CBC BIT-FLIP</div><div class="card-sub">encrypt a payment instruction, change one ciphertext byte, decrypt with the correct passphrase</div></div><span id="os-status"></span></div><div id="os-evidence"></div></section>
-      </div>`;
+      <section class="panel section">${panelHead('Live evidence · CBC bit-flip', 'Encrypt a payment instruction, change one ciphertext byte, decrypt with the correct passphrase', '<span id="os-status"></span>')}<div id="os-evidence"></div></section>`;
     root.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-a="run"]');
       if (b) busy(b, () => run('openssl'));
@@ -79,7 +71,7 @@ export default {
   },
   update() {
     const o = store.openssl;
-    $('#os-status').innerHTML = o ? `<span class="badge ${o.ok ? 'b-ok' : 'b-bad'}">${o.ok ? 'ALL STEPS AS EXPECTED' : `${o.failures ?? '?'} STEP(S) UNEXPECTED`}</span>` : '';
+    $('#os-status').innerHTML = o ? chip(o.ok ? 'PASS' : 'FAILED', { text: o.ok ? 'All steps as expected' : `${o.failures ?? '?'} step(s) unexpected` }) : chip('NOT RUN');
     $('#os-evidence').innerHTML = evidence(o);
   },
 };

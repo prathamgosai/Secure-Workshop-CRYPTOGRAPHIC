@@ -1,104 +1,212 @@
 import { store, engine, run } from '../store.js';
-import { esc, time, busy, statusBadge, icons, $ } from '../ui.js';
+import { esc, time, busy, chip, icons, pad2, packetFlow, panelHead, toast, $ } from '../ui.js';
 
 const STATES = [
-  ['INIT', 'Libraries loaded · keys initialised', 'sodium_init() · ephemeral X25519 key pairs'],
-  ['AUTH', 'Public keys exchanged · session keys derived', 'crypto_kx → BLAKE2b → rx/tx split'],
-  ['SECURE', 'AEAD packets active · replay protection active', 'ChaCha20-Poly1305 · seq as AAD'],
-  ['TERMINATE', 'Secrets wiped · session closed', 'sodium_free() zeroes every session key'],
+  ['INIT', ['Load libsodium', 'Load / generate keys'], 'sodium_init() · ephemeral X25519 key pairs'],
+  ['AUTH', ['Exchange public keys', 'Derive session keys'], 'crypto_kx → BLAKE2b → rx / tx split'],
+  ['SECURE', ['Encrypt', 'Authenticate', 'Check replay'], 'ChaCha20-Poly1305 · seq as AAD'],
+  ['TERMINATE', ['Wipe secrets', 'Close session'], 'sodium_free() zeroes every session key'],
 ];
 
-export function stateMachine() {
+/* Session lifecycle: static diagram, current state highlighted. Timestamps
+ * and event text come from the engine. */
+export function lifecycle() {
   const cur = store.session.state;
   const idx = STATES.findIndex((s) => s[0] === cur);
-  return `<ol class="sm">${STATES.map(([name, desc, tech], i) => {
+  return `<ol class="lifecycle" aria-label="Session lifecycle">${STATES.map(([name, subs, tech], i) => {
     const log = store.stateLog[name];
-    const cls = i < idx || (i === idx && name === 'TERMINATE') ? 'done' : i === idx ? 'current' : '';
-    const status = i === idx ? (name === 'TERMINATE' ? 'CLOSED' : 'ACTIVE') : i < idx ? 'COMPLETE' : 'PENDING';
-    return `<li class="${cls}">
-      <div class="node">${i + 1}</div>
-      <div><h4>${name} <span class="badge ${status === 'ACTIVE' ? 'b-cyan' : status === 'PENDING' ? 'b-muted' : 'b-ok'}">${status}</span></h4>
-        <p>${desc}</p>
-        <div class="ev">${esc(log?.msg || tech)}</div></div>
-      <time>${log ? time(log.ts) : '—'}</time>
+    const term = name === 'TERMINATE' && i === idx;
+    const cls = i < idx ? 'done' : i === idx ? `current${term ? ' term' : ''}` : '';
+    const status = i === idx ? (term ? 'CLOSED' : 'CURRENT') : i < idx ? 'COMPLETE' : 'PENDING';
+    return `<li class="stage ${cls}"${i === idx ? ' aria-current="step"' : ''}>
+      <div class="stage-top"><span class="stage-num">0${i + 1}</span>${chip(status)}</div>
+      <div class="stage-name">${name}</div>
+      <ul class="stage-tree">${subs.map((s) => `<li>${s}</li>`).join('')}</ul>
+      <div class="stage-ev">${esc(log?.msg || tech)}</div>
+      <div class="stage-time">${log ? time(log.ts) : '—'}</div>
     </li>`;
   }).join('')}</ol>`;
 }
 
-function properties() {
-  const s = store.session;
+/* Evidence gathered so far, only from real results. */
+function evidence() {
   const hist = store.attacks.history;
-  const blocked = (id) => hist.find((h) => h.id === id && h.pass);
-  const reqPass = store.tests && store.tests.failed === 0 && store.tests.total > 0;
+  const blocked = (id) => hist.some((h) => h.id === id && h.pass);
+  const reqPass = !!(store.tests && store.tests.total > 0 && store.tests.failed === 0);
   const accepted = store.packets.some((p) => p.verdict === 'ACCEPTED');
-  const rows = [
-    ['Confidentiality', s.state === 'SECURE' ? 'ACTIVE' : accepted ? 'VERIFIED' : 'NOT TESTED',
-      accepted ? 'ChaCha20 ciphertext decrypted only with the matching session key' : 'no packet exchanged yet'],
-    ['Integrity / authenticity', blocked('tamper') || blocked('aad') || reqPass ? 'VERIFIED' : 'NOT TESTED',
-      blocked('tamper') ? 'live ciphertext bit-flip rejected (rc -2)' : reqPass ? 'required suite: tamper + AAD tests pass' : 'run the Attack Lab or the test suite'],
-    ['Freshness (replay / reorder)', (blocked('replay') && blocked('reorder')) || reqPass ? 'VERIFIED' : blocked('replay') ? 'VERIFIED' : 'NOT TESTED',
-      blocked('replay') ? 'replayed packet rejected (rc -3)' : reqPass ? 'required suite: replay + reorder pass' : 'not yet exercised'],
-    ['Private-key storage', store.vault ? (store.vault.permissions_ok ? 'VERIFIED' : 'FAILED') : 'NOT TESTED',
-      store.vault ? `key files checked: ${store.vault.permissions_ok ? '0600 private / 0644 public' : 'unexpected modes'}` : 'open the Key Vault to scan'],
-    ['Handshake authentication', s.authenticated ? 'VERIFIED' : 'LIMITATION',
-      s.authenticated ? 'Ed25519-signed transcript verified (extension)' : 'plain crypto_kx does not authenticate peers — see Handshake › extension'],
-    ['Re-keying', s.state === 'SECURE' && (s.rekey_every || s.epoch > 1) ? 'ENABLED' : 'OFF',
-      s.state === 'SECURE' ? `epoch ${s.epoch}${s.rekey_every ? ` · every ${s.rekey_every} msgs` : ''}` : 'optional extension'],
-  ];
-  return `<div class="props">${rows.map(([n, st, why]) => `<div class="prop"><b>${n}</b>${statusBadge(st)}<small>${esc(why)}</small></div>`).join('')}</div>`;
+  return { blocked, reqPass, accepted };
 }
 
-function kpis() {
-  const a = store.attacks;
+function pillars() {
+  const s = store.session;
+  const { blocked, reqPass, accepted } = evidence();
+  const secure = s.state === 'SECURE';
+  const P = [
+    {
+      name: 'CONFIDENTIALITY', icon: 'lock', mech: 'ChaCha20 · 256-bit session key',
+      ...(accepted ? { st: 'VERIFIED', ev: 'Packet decrypted only with the matching session key (rc 0).' }
+        : reqPass ? { st: 'VERIFIED', ev: 'Required suite: round-trip test passed.' }
+          : secure ? { st: 'ACTIVE', ev: 'AEAD channel established — send a packet to verify.' }
+            : { st: 'NOT RUN', ev: 'No packet exchanged yet.' }),
+    },
+    {
+      name: 'INTEGRITY', icon: 'shield', mech: 'Poly1305 tag · 16 B',
+      ...(blocked('tamper') || blocked('aad') ? { st: 'VERIFIED', ev: `Live ${blocked('tamper') ? 'ciphertext bit-flip' : 'AAD rewrite'} rejected (rc −2).` }
+        : reqPass ? { st: 'VERIFIED', ev: 'Required suite: tamper and AAD tests passed.' }
+          : { st: 'NOT RUN', ev: 'Run a tamper attack or the test suite.' }),
+    },
+    {
+      name: 'AUTHENTICITY', icon: 'fingerprint', mech: s.authenticated ? 'Ed25519-signed handshake' : 'Poly1305 · plain crypto_kx',
+      ...(s.authenticated ? { st: 'VERIFIED', ev: 'Server signature over the transcript verified against pinned server_pk.bin.' }
+        : secure || blocked('wrongkey') ? { st: 'LIMITED', ev: 'Packets are authenticated, but plain crypto_kx does not authenticate the peer. Use the signed handshake.' }
+          : { st: 'NOT RUN', ev: 'Run the handshake (signed mode authenticates the server).' }),
+    },
+    {
+      name: 'FRESHNESS', icon: 'clock', mech: '64-bit seq · strict window',
+      ...(blocked('replay') ? { st: 'VERIFIED', ev: `Replayed packet rejected (rc −3)${blocked('reorder') ? '; reorder rejected too' : ''}.` }
+        : reqPass ? { st: 'VERIFIED', ev: 'Required suite: replay and reorder tests passed.' }
+          : secure ? { st: 'ACTIVE', ev: 'Replay window armed — launch a replay to verify.' }
+            : { st: 'NOT RUN', ev: 'Not yet exercised.' }),
+    },
+  ];
+  const tone = { VERIFIED: 'ok', ACTIVE: 'info', LIMITED: 'warn', 'NOT RUN': 'muted' };
+  const glyph = { ok: '✓', info: '●', warn: '!', muted: '○' };
+  return `<div class="pillars">${P.map((p) => `
+    <div class="pillar">
+      <div class="pillar-head">${icons[p.icon]}<span class="pillar-name">${p.name}</span></div>
+      <div class="pillar-status ${tone[p.st]}"><span class="g" aria-hidden="true">${glyph[tone[p.st]]}</span>${p.st}</div>
+      <div class="pillar-mech">${esc(p.mech)}</div>
+      <div class="pillar-ev">${esc(p.ev)}</div>
+    </div>`).join('')}</div>`;
+}
+
+function posture() {
+  const s = store.session;
+  const v = store.vault;
+  const hs = store.handshake;
   const t = store.tests;
+  const w = store.wrap;
+  const { blocked, reqPass } = evidence();
+  const rows = [
+    { icon: 'key', name: 'Key Management', alg: 'Ed25519 · X25519 · 0600',
+      st: v ? (v.permissions_ok ? 'PASS' : 'FAILED') : 'NOT RUN',
+      why: v ? (v.permissions_ok ? 'private key files 0600, public 0644, exact sizes' : 'unexpected file modes — see Key Vault') : 'open the Key Vault to scan key files',
+      detail: ['Task 1. ./keygen creates the Ed25519 identity key and the X25519 key-exchange key. Private files are created with open(…, 0600) and fchmod, reloaded and checked against their public halves, then wiped with sodium_memzero.',
+        'This row reflects the most recent vault scan performed by sc_engine.'] },
+    { icon: 'handshake', name: 'Session Establishment', alg: 'X25519 · crypto_kx',
+      st: hs?.ok ? 'PASS' : hs ? 'FAILED' : 'NOT RUN',
+      why: hs?.ok ? `${hs.mode === 'signed' ? 'signed' : 'plain'} handshake · client_tx = server_rx · directional keys` : 'run the handshake',
+      detail: ['Task 2. Both sides exchange ephemeral X25519 public keys; crypto_kx hashes the shared secret with both public keys (BLAKE2b) and splits it into two directional keys.',
+        'The checks client_tx == server_rx and client_tx ≠ client_rx are performed in C with sodium_memcmp.'] },
+    { icon: 'lock', name: 'AEAD Protection', alg: 'ChaCha20-Poly1305-IETF',
+      st: blocked('tamper') || blocked('aad') || reqPass ? 'PASS' : 'NOT RUN',
+      why: blocked('tamper') ? 'live ciphertext bit-flip rejected (rc −2)' : reqPass ? 'required suite: tamper + AAD pass' : 'authenticated encryption with associated data',
+      detail: ['Task 3. Each packet is [seq 8][nonce 12][ciphertext][tag 16]. The sequence number is authenticated as AAD, so it cannot be changed even though it travels in clear.',
+        'unseal() checks length → replay window → tag, and returns nothing unless the tag verifies.'] },
+    { icon: 'clock', name: 'Replay Protection', alg: 'seq > last_seq',
+      st: blocked('replay') || reqPass ? 'PASS' : 'NOT RUN',
+      why: blocked('replay') ? 'live replay rejected (rc −3)' : reqPass ? 'required suite: replay + reorder pass' : 'strict monotonic sequence window',
+      detail: ['Task 4. The receiver only accepts a sequence number strictly greater than the last authenticated one. last_seq is updated only after the tag verifies, so a forged large sequence cannot poison the window.'] },
+    { icon: 'wrap', name: 'Key Wrapping', alg: 'Argon2id · secretbox',
+      st: w.correct?.pass && w.wrong?.pass ? 'PASS' : w.correct || w.wrong ? (w.correct?.pass === false || w.wrong?.pass === false ? 'FAILED' : 'PARTIAL') : 'NOT RUN',
+      why: w.correct?.pass && w.wrong?.pass ? 'correct passphrase accepted · wrong passphrase rejected' : w.correct || w.wrong ? 'run both the correct and wrong passphrase checks' : 'private key encrypted at rest',
+      detail: ['Task 5. Argon2id (64 MiB) turns a passphrase and random salt into a 32-byte key; crypto_secretbox (XSalsa20-Poly1305) encrypts the Ed25519 secret key. A wrong passphrase fails the MAC and releases nothing.'] },
+    { icon: 'attacks', name: 'Attack Testing', alg: 'tests/test_attacks.c',
+      st: t ? (t.total && !t.failed ? 'PASS' : 'FAILED') : 'NOT RUN',
+      text: t && t.total ? `${t.passed}/${t.total} ${t.failed ? 'FAIL' : 'PASS'}` : undefined,
+      why: t ? `required suite · exit code ${t.code}` : store.attacks.executed ? `${store.attacks.passed}/${store.attacks.executed} live attacks behaved as expected — suite not run` : 'run the security test suite',
+      detail: ['The eight required tests from the brief run as a separate process. The Attack Lab runs the same attacks live against the session inside sc_engine.'] },
+  ];
+  return `<div class="posture">${rows.map((r) => `
+    <details>
+      <summary>${icons[r.icon].replace('<svg', '<svg class="ico"')}<span class="name">${r.name}</span><span class="alg">${esc(r.alg)}</span><span class="why">${esc(r.why)}</span>${chip(r.st, { text: r.text })}${icons.caret}</summary>
+      <div class="detail">${r.detail.map((d) => `<p>${esc(d)}</p>`).join('')}<p class="faint">Current evidence: ${esc(r.why)}.</p></div>
+    </details>`).join('')}</div>`;
+}
+
+function heroStatus() {
+  const t = store.tests;
+  const s = store.session;
+  const score = t && t.total
+    ? `<div class="score ${t.failed ? 'bad' : 'ok'}">${t.passed}<small> / ${t.total}</small></div>${chip(t.failed ? 'FAILED' : 'PASS', { lg: true })}`
+    : `${chip('NOT RUN', { lg: true })}<span class="faint small" style="max-width:240px">Run the security test suite to populate verified results.</span>`;
+  return `
+    <div class="meta"><span class="k">Session</span><span>${chip(s.state === 'SECURE' ? 'SECURE' : s.state === 'TERMINATE' ? 'TERMINATED' : s.state, { lg: true, tone: s.state === 'SECURE' ? 'ok' : s.state === 'TERMINATE' ? 'muted' : 'info' })}</span></div>
+    <div class="meta"><span class="k">Security tests · required suite</span>${score}</div>`;
+}
+
+function metrics() {
+  const a = store.attacks;
   const acc = store.packets.filter((p) => p.verdict === 'ACCEPTED').length;
-  const rej = store.packets.filter((p) => p.verdict !== 'ACCEPTED').length;
-  return `<div class="kpis">
-    <div class="kpi"><span>ATTACKS BLOCKED</span><b class="${a.failed ? 'bad' : 'ok'}">${a.blocked}<span class="faint">/${a.executed - (a.history.filter((h) => h.expected === 'ACCEPTED').length)}</span></b><small>${a.executed} executed · ${a.failed} unexpected</small></div>
-    <div class="kpi"><span>REQUIRED TESTS</span><b class="${t ? (t.failed ? 'bad' : 'ok') : ''}">${t ? `${t.passed}/${t.total}` : '—'}</b><small>${t ? 'tests/test_attacks.c' : 'not run yet'}</small></div>
-    <div class="kpi"><span>PACKETS</span><b>${acc}<span class="faint"> ✓ </span>${rej}<span class="faint"> ✕</span></b><small>accepted · rejected</small></div>
-    <div class="kpi"><span>KEY EPOCH</span><b>${store.session.state === 'SECURE' ? String(store.session.epoch).padStart(2, '0') : '—'}</b><small>seq next ${store.session.next_seq || '—'}</small></div>
+  const rej = store.packets.length - acc;
+  const s = store.session;
+  return `<div class="metrics-line">
+    <div class="metric"><span>Packets accepted</span><b>${acc}</b></div>
+    <div class="metric"><span>Packets rejected</span><b>${rej}</b></div>
+    <div class="metric"><span>Attacks blocked</span><b class="${a.failed ? 'bad' : ''}">${a.blocked}<small> of ${a.executed} run</small></b></div>
+    <div class="metric"><span>Key epoch</span><b>${s.state === 'SECURE' ? pad2(s.epoch) : '—'}</b></div>
+    <div class="metric"><span>Next sequence</span><b>${s.state === 'SECURE' ? s.next_seq : '—'}</b></div>
   </div>`;
+}
+
+function lastTransmission() {
+  const p = store.deliveries[0];
+  const s = store.session;
+  const secure = s.state === 'SECURE';
+  return packetFlow({
+    from: { icon: 'client', name: 'CLIENT', sub: s.key_fingerprints ? `tx ${s.key_fingerprints.client_tx}` : 'seal() · client_tx' },
+    to: { icon: 'server', name: 'SERVER', sub: s.key_fingerprints ? `rx ${s.key_fingerprints.server_rx}` : 'unseal() · server_rx' },
+    packet: p || null, verdict: p?.verdict, rc: p?.rc, live: secure, hostile: p?.role === 'attacker',
+    label: p ? `packet #${p.id} · ${p.length} B · ${p.label}` : secure ? 'channel ready — no packet sent yet' : s.state === 'TERMINATE' ? 'session terminated · keys wiped' : 'no session — run the handshake',
+  });
 }
 
 export default {
   id: 'overview',
   label: 'Overview',
+  icon: 'overview',
   mount(root, ctx) {
     root.innerHTML = `
-      <div class="page-head">
-        <div><h1>OVERVIEW</h1>
-          <p>Live view of a libsodium secure channel: every status on this dashboard comes from the C implementation (<code>sc_engine</code>, the test suites and the OpenSSL script), not from the browser.</p></div>
-        <div class="actions">
-          <button class="btn" data-a="keys">GENERATE KEYS</button>
-          <button class="btn btn-primary" data-a="hs">RUN HANDSHAKE</button>
-          <button class="btn" data-a="send">SEND PACKET</button>
-          <button class="btn" data-a="tests">RUN TEST SUITE</button>
+      <section class="panel hero" aria-labelledby="ov-title">
+        <div class="hero-top">
+          <div>
+            <span class="eyebrow accent">Secure communication lab</span>
+            <h1 id="ov-title">Secure Channel</h1>
+            <p class="lede">Authenticated encrypted communication laboratory. Every status on this console is reported by the C implementation — <code>sc_engine</code>, the test suites and the OpenSSL script — never by the browser.</p>
+            <div class="actions">
+              <button class="btn btn-primary" data-a="hs">Start secure session</button>
+              <button class="btn" data-a="send">Send packet</button>
+              <button class="btn" data-a="tests">Run security tests</button>
+              <button class="btn btn-ghost" data-a="keys">Generate keys</button>
+            </div>
+          </div>
+          <div class="hero-status" id="ov-status"></div>
         </div>
-      </div>
-      <div class="grid">
-        <section class="card s8 glow">
-          <div class="card-head"><div><div class="card-title">LIVE SECURE CHANNEL</div><div class="card-sub">client ⇄ server over ChaCha20-Poly1305 · seq authenticated as AAD</div></div><div id="ov-state"></div></div>
-          <div class="lane">
-            <div class="endpoint" id="ov-client">${icons.client}<b>CLIENT</b><small id="ov-ctx">tx —</small></div>
-            <div class="track" id="ov-track"><span class="track-label" id="ov-label">no session</span></div>
-            <div class="endpoint" id="ov-server">${icons.server}<b>SERVER</b><small id="ov-srx">rx —</small></div>
-          </div>
-        </section>
-        <section class="card s4"><div class="card-head"><div class="card-title">METRICS</div></div><div id="ov-kpis"></div></section>
-        <section class="card s6"><div class="card-head"><div class="card-title">STATE MACHINE</div><span class="card-sub">timestamps from engine events</span></div><div id="ov-sm"></div></section>
-        <section class="card s6"><div class="card-head"><div class="card-title">SECURITY PROPERTIES</div><span class="card-sub">status reflects checks actually run</span></div><div id="ov-props"></div></section>
-        <section class="card s12">
-          <div class="card-head"><div class="card-title">PACKET FORMAT</div><span class="card-sub">what travels on the wire</span></div>
-          <div class="fmt">
-            <div class="fx-seq"><b>SEQ · 8 B</b><span>freshness — big-endian, clear text, authenticated as AAD</span></div>
-            <div class="fx-nonce"><b>NONCE · 12 B</b><span>unique encryption input — random per packet</span></div>
-            <div class="fx-ct"><b>CIPHERTEXT · n B</b><span>confidentiality — ChaCha20</span></div>
-            <div class="fx-tag"><b>TAG · 16 B</b><span>integrity + authenticity — Poly1305</span></div>
-          </div>
-          <p class="note">Minimum packet = 36 bytes. <code>unseal()</code> checks length → replay window → tag, and updates <code>last_seq</code> only after the tag verifies.</p>
-        </section>
-      </div>`;
+        <div id="ov-pillars"></div>
+        <div class="primitives" aria-label="Cryptographic primitives">
+          <div class="prim"><b>ChaCha20-Poly1305</b><span>AEAD packets</span></div>
+          <div class="prim"><b>X25519</b><span>Key exchange</span></div>
+          <div class="prim"><b>Ed25519</b><span>Identity · signatures</span></div>
+          <div class="prim"><b>Argon2id</b><span>Key wrapping KDF</span></div>
+          <div class="prim"><b>seq &gt; last_seq</b><span>Replay protection</span></div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="ov-life">
+        <div class="section-head"><div><span class="eyebrow">Protocol</span><h2 id="ov-life">Session lifecycle</h2><p>INIT → AUTH → SECURE → TERMINATE · timestamps from engine events</p></div></div>
+        <div id="ov-sm"></div>
+        <div id="ov-metrics"></div>
+      </section>
+
+      <section class="section" aria-labelledby="ov-post">
+        <div class="section-head"><div><span class="eyebrow">Verification</span><h2 id="ov-post">Security posture</h2><p>Each row reflects checks actually executed in this session. Select a row for the explanation.</p></div></div>
+        <div id="ov-posture"></div>
+      </section>
+
+      <section class="section panel" aria-labelledby="ov-last">
+        ${panelHead('<span id="ov-last">Last transmission</span>', 'Static view of the most recent packet on the wire and the server&rsquo;s verdict from unseal()')}
+        <div id="ov-flow"></div>
+      </section>`;
     root.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-a]');
       if (!b) return;
@@ -106,27 +214,21 @@ export default {
       if (a === 'keys') busy(b, async () => { await run('keygen'); await engine('vault'); });
       if (a === 'hs') busy(b, () => engine('handshake', 'plain'));
       if (a === 'send') busy(b, async () => {
-        if (store.session.state !== 'SECURE') { ctx.navigate('handshake'); return; }
-        const r = await engine('send', 'Status report: all systems nominal');
-        ctx.animatePacket($('#ov-track'), r);
+        if (store.session.state !== 'SECURE') { toast('Channel is not SECURE — start a secure session first', true); return; }
+        await engine('send', 'Status report: all systems nominal');
       });
       if (a === 'tests') busy(b, () => run('tests'));
     });
     this.update();
   },
   update() {
-    const s = store.session;
-    const secure = s.state === 'SECURE';
-    const fp = s.key_fingerprints;
-    $('#ov-state').innerHTML = `<span class="badge ${secure ? 'b-ok' : s.state === 'TERMINATE' ? 'b-muted' : 'b-info'}">${s.state}${secure ? ` · EPOCH ${String(s.epoch).padStart(2, '0')}` : ''}</span>`;
-    $('#ov-client').classList.toggle('live', secure);
-    $('#ov-server').classList.toggle('live', secure);
-    $('#ov-track').classList.toggle('live', secure);
-    $('#ov-label').textContent = secure ? `AEAD channel · next seq ${s.next_seq}${s.authenticated ? ' · signed' : ''}` : s.state === 'TERMINATE' ? 'session terminated · keys wiped' : 'no session — run the handshake';
-    $('#ov-ctx').textContent = fp ? `tx ${fp.client_tx}` : 'tx —';
-    $('#ov-srx').textContent = fp ? `rx ${fp.server_rx}` : 'rx —';
-    $('#ov-kpis').innerHTML = kpis();
-    $('#ov-sm').innerHTML = stateMachine();
-    $('#ov-props').innerHTML = properties();
+    $('#ov-status').innerHTML = heroStatus();
+    $('#ov-pillars').innerHTML = pillars();
+    $('#ov-sm').innerHTML = lifecycle();
+    $('#ov-metrics').innerHTML = metrics();
+    const open = [...document.querySelectorAll('#ov-posture details')].map((d) => d.open);
+    $('#ov-posture').innerHTML = posture();
+    document.querySelectorAll('#ov-posture details').forEach((d, i) => { d.open = !!open[i]; });
+    $('#ov-flow').innerHTML = lastTransmission();
   },
 };

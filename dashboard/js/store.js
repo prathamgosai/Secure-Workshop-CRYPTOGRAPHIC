@@ -9,6 +9,8 @@ export const store = {
   engineUp: false,
   platform: '',
   libsodium: '',
+  toolchain: null,       // versions detected by the bridge at start-up
+  bridgeBuild: null,     // result of the make run the bridge did before starting the engine
   session: { state: 'INIT', epoch: 0, next_seq: 0, has_seq: false, last_seq: 0, authenticated: false, rekey_every: 0, key_fingerprints: null },
   stateLog: { INIT: null, AUTH: null, SECURE: null, TERMINATE: null },
   events: [],             // {ts, level, msg, src}
@@ -22,6 +24,7 @@ export const store = {
   wrap: { correct: null, wrong: null, last: null },
   tests: null,
   testsExtended: null,
+  build: null,
   openssl: null,
   bench: null,
   tcp: { server: false, client: false, events: [] },
@@ -67,6 +70,8 @@ function capturePackets(resp) {
     const p = {
       id: ++packetId, ts: Date.now(), cmd: resp.cmd, attack: resp.attack?.id || null,
       label: st.label, rc: st.rc, verdict: st.verdict, reason: st.reason, rekeyed: st.rekeyed,
+      // the user's own message, echoed by the engine only when unseal() returned 0
+      delivered: resp.cmd === 'send' && st.rc === 0 ? resp.delivered_text : undefined,
       ...st.packet,
     };
     store.packets.unshift(p);
@@ -116,6 +121,7 @@ export async function run(what) {
   if (what === 'openssl') store.openssl = r;
   if (what === 'bench') store.bench = r;
   if (what === 'keygen') store.keygen = r;
+  if (what === 'build') store.build = r;
   const detail = r.total !== undefined ? ` — ${r.passed}/${r.total} passed` : '';
   addEvent(r.ok ? 'INFO' : 'ERROR', `${labelFor(what)} ${r.ok ? 'completed' : 'FAILED'}${detail}`, 'bridge');
   notify(what);
@@ -131,18 +137,18 @@ function labelFor(what) {
 
 /* Overall system status, derived only from real results. */
 export function systemStatus() {
-  if (!store.engineUp) return { cls: 'pill-bad', text: 'OFFLINE', detail: 'engine not running' };
+  if (!store.engineUp) return { tone: 'bad', text: 'OFFLINE', detail: 'engine not running' };
   const problems = [];
   if (store.attacks.failed) problems.push(`${store.attacks.failed} attack check(s) unexpected`);
   if (store.tests && store.tests.failed) problems.push(`${store.tests.failed} required test(s) failed`);
   if (store.testsExtended && store.testsExtended.failed) problems.push('extended tests failed');
   if (store.vault && !store.vault.permissions_ok) problems.push('key permissions not 0600/0644');
   if (store.openssl && store.openssl.ok === false) problems.push('OpenSSL comparison failed');
-  if (problems.length) return { cls: 'pill-warn', text: 'WARNING', detail: problems[0] };
+  if (problems.length) return { tone: 'warn', text: 'WARNING', detail: problems[0] };
   const s = store.session.state;
-  if (s === 'SECURE') return { cls: 'pill-ok', text: 'SECURE', detail: `epoch ${store.session.epoch} · ${store.session.authenticated ? 'signed handshake' : 'plain crypto_kx'}` };
-  if (s === 'TERMINATE') return { cls: 'pill-muted', text: 'TERMINATED', detail: 'secrets wiped' };
-  return { cls: 'pill-info', text: 'CONNECTED', detail: `libsodium ${store.libsodium || ''} · no session` };
+  if (s === 'SECURE') return { tone: 'ok', text: 'SECURE', detail: `epoch ${store.session.epoch} · ${store.session.authenticated ? 'signed handshake' : 'plain crypto_kx'}` };
+  if (s === 'TERMINATE') return { tone: 'muted', text: 'TERMINATED', detail: 'secrets wiped' };
+  return { tone: 'info', text: 'READY', detail: `libsodium ${store.libsodium || ''} · no session` };
 }
 
 export function resetCounters() {
