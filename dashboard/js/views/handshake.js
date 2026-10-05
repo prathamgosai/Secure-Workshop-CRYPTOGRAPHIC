@@ -1,5 +1,5 @@
 import { store, engine, run } from '../store.js';
-import { esc, busy, shortHex, chip, emptyState, errorState, pageHead, panelHead, $, $$ } from '../ui.js';
+import { esc, busy, shortHex, chip, emptyState, errorState, pageHead, panelHead, mitmComparisonDiagram, whyThisMatters, $, $$ } from '../ui.js';
 
 let mode = 'plain';
 
@@ -57,9 +57,11 @@ function derivation() {
 
 function mitm() {
   const m = store.mitm;
-  if (!m) return emptyState('Runs the same man-in-the-middle scenario as <code>./mitm_demo</code> inside the engine: first against plain crypto_kx, then against the signed handshake.', '<button class="btn" data-a="mitm">Run MITM scenario</button>');
+  if (!m) return emptyState('Runs the same man-in-the-middle scenario as <code>./mitm_demo</code> inside the engine: first against plain crypto_kx, then against the signed handshake.', '<button class="btn btn-primary" data-a="mitm">Run MITM scenario</button>');
   const row = (hit, text, good) => `<div class="match"><span class="g ${hit ? (good ? 'ok' : 'warn') : 'faint'}" aria-hidden="true">${hit ? (good ? '✓' : '!') : '·'}</span><span>${text}</span></div>`;
-  return `<div class="split">
+  return `
+    ${mitmComparisonDiagram(m)}
+    <div class="split" style="margin-top:16px">
       <div class="tile"><div class="panel-title" style="margin-bottom:8px">Plain crypto_kx · as in the brief</div>
         ${row(m.plain.mallory_read, `Mallory decrypted client traffic: <code>${esc(m.plain.read_text)}</code>`, false)}
         ${row(m.plain.mallory_forged, `Server accepted Mallory&rsquo;s rewrite: <code>${esc(m.plain.forged_text)}</code>`, false)}
@@ -98,6 +100,8 @@ export default {
           </div>
         </section>
         <section class="panel s12" id="hs-mitm-card">${panelHead('Man-in-the-middle · authenticated handshake extension', 'Plain crypto_kx has no peer authentication. The extension signs server_eph ‖ client_eph with the long-term Ed25519 key.')}<div id="hs-mitm"></div></section>
+        <section class="panel s6">${whyThisMatters('handshake')}</section>
+        <section class="panel s6">${whyThisMatters('directional')}</section>
       </div>`;
     $('#hs-mode', root).addEventListener('click', (e) => {
       const b = e.target.closest('button[data-m]');

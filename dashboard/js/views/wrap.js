@@ -1,5 +1,5 @@
 import { store, engine, run } from '../store.js';
-import { esc, busy, chip, emptyState, pageHead, panelHead, $ } from '../ui.js';
+import { esc, busy, chip, emptyState, pageHead, panelHead, whyThisMatters, $ } from '../ui.js';
 
 function chain() {
   const last = store.wrap.last ? store.wrap[store.wrap.last] : null;
@@ -54,7 +54,8 @@ export default {
         '<button class="btn btn-ok" data-a="wrap-correct">Correct passphrase</button><button class="btn btn-danger" data-a="wrap-wrong">Wrong passphrase</button>')}
       <section class="panel elevated" id="vk-wrap">${panelHead('Algorithm chain', 'passphrase → Argon2id → 32-byte key → secretbox → wrapped key')}<div id="wr-chain"></div></section>
       <div class="section" id="wr-outcomes"></div>
-      <section class="panel section">${panelHead('Wrapped key parameters', 'Reported by sc_engine for the most recent check')}<div id="wr-params"></div></section>`;
+      <section class="panel section">${panelHead('Wrapped key parameters', 'Reported by sc_engine for the most recent check')}<div id="wr-params"></div></section>
+      <section class="panel section">${whyThisMatters('keywrap')}</section>`;
     root.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-a]');
       if (!b) return;

@@ -1,6 +1,7 @@
 import { store, engine, addEvent, notify } from '../store.js';
 import { api } from '../api.js';
-import { esc, time, busy, chip, verdictBadge, toast, pad2, seqLabel, hexGroups, packetFlow, pageHead, panelHead, emptyState, $ } from '../ui.js';
+import { esc, time, busy, chip, verdictBadge, toast, pad2, seqLabel, hexGroups, packetFlow, pageHead, panelHead, emptyState, fullCryptoPipeline, whyThisMatters, $ } from '../ui.js';
+import { securityDecisionTrace } from '../trace.js';
 
 const lastSent = () => store.deliveries.find((p) => p.cmd === 'send') || null;
 
@@ -88,6 +89,14 @@ export default {
           <div class="hr"></div>
           <div id="ch-packet"></div>
         </section>
+        <section class="panel s12">
+          ${panelHead('Cryptographic AEAD Pipeline', '10-Stage seal() / unseal() wire lifecycle (ChaCha20-Poly1305)')}
+          <div id="ch-full-pipe"></div>
+        </section>
+        <section class="panel s12">
+          ${panelHead('Security Decision Trace', 'Step-by-step cryptographic verdict for the latest message')}
+          <div id="ch-trace"></div>
+        </section>
         <section class="panel s12">${panelHead('Transmission', 'Static view of the last packet on the wire')}<div id="ch-flow"></div></section>
         <section class="panel s7">${panelHead('Recent deliveries', 'Newest first · includes Attack Lab packets')}<div id="ch-list"></div></section>
         <section class="panel s5">
@@ -100,6 +109,8 @@ export default {
           <div class="hr"></div>
           <div id="ch-epochs"></div>
         </section>
+        <section class="panel s6">${whyThisMatters('aead')}</section>
+        <section class="panel s6">${whyThisMatters('replay')}</section>
         <section class="panel s12">
           ${panelHead('TCP mode · localhost client / server · extension', 'Real sockets on 127.0.0.1:7700 · 4-byte length prefix · signed handshake · runs <code>sc_server</code> and <code>sc_client</code>', '<span id="tcp-status" class="actions"></span>')}
           <div class="row">
@@ -168,6 +179,10 @@ export default {
     const p = lastSent();
     $('#ch-pipe').innerHTML = pipeline(p, $('#ch-msg')?.value);
     $('#ch-packet').innerHTML = packetPanel(p);
+    const fullPipeEl = $('#ch-full-pipe');
+    if (fullPipeEl) fullPipeEl.innerHTML = fullCryptoPipeline(p, $('#ch-msg')?.value);
+    const traceEl = $('#ch-trace');
+    if (traceEl) traceEl.innerHTML = securityDecisionTrace(p);
     const last = store.deliveries[0];
     $('#ch-flow').innerHTML = packetFlow({
       from: last?.role === 'attacker' ? { icon: 'network', name: 'NETWORK', sub: 'attacker in path', hostile: true } : { icon: 'client', name: 'CLIENT', sub: 'seal() · client_tx' },

@@ -205,3 +205,299 @@ export const icons = {
   memory: svg('<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'),
   caret: '<svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
 };
+
+/* ---- Architectural Tiers & Trust Boundary (Rules 39, 40) -------------------
+ * Communicates clearly: Untrusted Browser → Controlled Node Bridge → Trusted C Engine */
+export function architecturalTiers() {
+  return `<div class="arch-tiers" role="region" aria-label="System Architecture and Trust Boundaries">
+    <div class="tier tier-untrusted">
+      <div class="tier-tag"><span class="chip c-warn"><span class="g">!</span>UNTRUSTED · PRESENTATION LAYER</span></div>
+      <div class="tier-card">
+        <div class="tier-head">
+          <div class="tier-title">Browser Dashboard</div>
+          <span class="faint small mono">localhost</span>
+        </div>
+        <div class="tier-tech">HTML5 · Vanilla CSS · JavaScript Modules</div>
+        <p>Interactive control center, packet wire inspection, attack triggering and telemetry display. <b>Zero cryptographic keys or private material are ever loaded into or possessed by the browser.</b></p>
+        <div class="tier-badges">
+          <span class="tbadge">DOM UI</span>
+          <span class="tbadge">Wire Inspector</span>
+          <span class="tbadge">Zero Secret Persistence</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tier-connector" aria-hidden="true">
+      <span class="conn-label">JSON over HTTP (127.0.0.1)</span>
+      <span class="conn-arrow">↓</span>
+    </div>
+
+    <div class="tier tier-controlled">
+      <div class="tier-tag"><span class="chip c-info"><span class="g">●</span>CONTROLLED · LOCAL IPC BRIDGE</span></div>
+      <div class="tier-card">
+        <div class="tier-head">
+          <div class="tier-title">Node.js Bridge Runner</div>
+          <span class="faint small mono">bridge/server.js</span>
+        </div>
+        <div class="tier-tech">Node.js HTTP Server · Child Process Controller</div>
+        <p>Local validator with strict security controls: DNS rebinding guard (Host header check, 421), CSP headers (<code>script-src 'self'</code>), client header verification (403), command whitelist, and path traversal block.</p>
+        <div class="tier-badges">
+          <span class="tbadge">DNS Rebinding Guard</span>
+          <span class="tbadge">Command Whitelist</span>
+          <span class="tbadge">Process Sandbox</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tier-connector" aria-hidden="true">
+      <span class="conn-label">POSIX Standard I/O (JSON Line Stream)</span>
+      <span class="conn-arrow">↓</span>
+    </div>
+
+    <div class="tier tier-trusted">
+      <div class="tier-tag"><span class="chip c-ok"><span class="g">✓</span>TRUSTED · CRYPTOGRAPHIC BOUNDARY</span></div>
+      <div class="tier-card">
+        <div class="tier-head">
+          <div class="tier-title">C Cryptographic Engine (sc_engine) + libsodium</div>
+          <span class="faint small mono">POSIX C11 · libsodium</span>
+        </div>
+        <div class="tier-tech">C11 (GCC) · libsodium 1.0.18+ · WSL2 / Linux Kernel</div>
+        <p>All cryptographic operations execute exclusively within this boundary. Ephemeral keys are protected with <code>sodium_malloc()</code> guard pages; secrets are zeroed with <code>sodium_memzero()</code> immediately after use.</p>
+        <div class="tier-badges">
+          <span class="tbadge">ChaCha20-Poly1305</span>
+          <span class="tbadge">crypto_kx (X25519)</span>
+          <span class="tbadge">Ed25519 Signatures</span>
+          <span class="tbadge">Argon2id + Secretbox</span>
+          <span class="tbadge">sodium_memzero()</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---- Full Cryptographic Pipeline (Rule 18) --------------------------------
+ * Major static visual showing the complete cryptographic lifecycle from
+ * message to unseal and release. */
+export function fullCryptoPipeline(p, text) {
+  const isOk = p?.rc === 0 && (p?.verdict === 'ACCEPTED' || p?.verdict === 'UNCHANGED');
+  const hasPacket = !!p;
+  const isAttack = hasPacket && p.rc !== 0;
+  const seqDisp = p?.seq !== undefined ? (p.seq === '18446744073709551615' ? '2⁶⁴−1' : String(p.seq)) : '0';
+  const ptBytes = text ? new TextEncoder().encode(text).length : (p?.ct_len ?? 0);
+
+  const stages = [
+    { n: '01', name: 'PLAINTEXT', meta: hasPacket ? `${p.ct_len} B input` : `${ptBytes} B msg`, status: hasPacket ? 'done' : 'ready' },
+    { n: '02', name: 'VALIDATE', meta: hasPacket ? 'Length ≤ 256 B' : 'Input validation', status: hasPacket ? 'done' : 'pending' },
+    { n: '03', name: 'SEQUENCE #', meta: hasPacket ? `Seq #${seqDisp} (8 B)` : 'Monotonic counter', status: hasPacket ? 'done' : 'pending' },
+    { n: '04', name: 'NONCE', meta: hasPacket ? (p.nonce_hex ? shortHex(p.nonce_hex, 2) : '12 B random') : '12 B random', status: hasPacket ? 'done' : 'pending' },
+    { n: '05', name: 'AAD BINDING', meta: hasPacket ? 'Seq bound as AAD' : 'Authenticated meta', status: hasPacket ? 'done' : 'pending' },
+    { n: '06', name: 'CHACHA20 SEAL', meta: hasPacket ? `${p.ct_len} B ciphertext` : 'Client TX key', status: hasPacket ? 'done' : 'pending' },
+    { n: '07', name: 'POLY1305 TAG', meta: hasPacket ? (p.tag_hex ? shortHex(p.tag_hex, 2) : '16 B tag') : '16 B authenticator', status: hasPacket ? 'done' : 'pending' },
+    { n: '08', name: 'WIRE PACKET', meta: hasPacket ? `${p.length} B on wire` : '36 + n B datagram', status: hasPacket ? 'done' : 'pending' },
+    { n: '09', name: 'AEAD UNSEAL', meta: hasPacket ? (isOk ? 'Tag verified' : `unseal() rc ${p.rc}`) : 'Server RX key', status: hasPacket ? (isOk ? 'done' : 'fail') : 'pending' },
+    { n: '10', name: 'PLAINTEXT RELEASE', meta: hasPacket ? (isOk ? 'Plaintext released' : 'RELEASE BLOCKED') : 'Delivered buffer', status: hasPacket ? (isOk ? 'done' : 'fail') : 'pending' }
+  ];
+
+  return `<div class="full-pipeline" role="region" aria-label="Cryptographic AEAD Pipeline">
+    <div class="pipe-track">
+      ${stages.map((st) => `<div class="pipe-node ${st.status}">
+        <span class="pipe-num">${st.n}</span>
+        <b class="pipe-title">${st.name}</b>
+        <small class="pipe-meta">${esc(st.meta)}</small>
+      </div>`).join('<div class="pipe-arrow" aria-hidden="true">→</div>')}
+    </div>
+  </div>`;
+}
+
+/* ---- Static Attack Comparison (Rule 22) -----------------------------------
+ * Pure static side-by-side comparison: Legitimate Packet vs In-Transit Mutation */
+export function staticAttackComparison(attackId = 'tamper') {
+  const titles = {
+    normal: 'Normal Genuine Packet',
+    tamper: 'Ciphertext Tampering (Bit Flip)',
+    aad: 'Sequence / AAD Manipulation',
+    replay: 'Packet Replay Attack',
+    reorder: 'Packet Reordering',
+    wrongkey: 'Forged Key Injection',
+    forged: 'Forged Sequence Window Poisoning',
+    short: 'Malformed / Truncated Datagram'
+  };
+  const mutations = {
+    normal: 'Zero modification (genuine client transmission)',
+    tamper: 'Attacker flips 1 bit of ciphertext in transit',
+    aad: 'Attacker rewrites clear-text seq in header (+1000)',
+    replay: 'Attacker captures and re-sends already accepted packet',
+    reorder: 'Attacker delivers newer packet first, older packet second',
+    wrongkey: 'Attacker seals packet with forged unauthorized key',
+    forged: 'Attacker injects forged seq = 2⁶⁴−1 to poison window',
+    short: 'Attacker truncates packet below 36-byte minimum'
+  };
+
+  const title = titles[attackId] || 'Injected Attack Scenario';
+  const mutation = mutations[attackId] || 'Packet modified by attacker';
+
+  return `<div class="attack-comparison-grid">
+    <div class="cmp-flow legit">
+      <div class="cmp-head">
+        <span class="chip c-ok"><span class="g">✓</span>LEGITIMATE TRANSMISSION</span>
+        <b>Genuine Client Packet Flow</b>
+      </div>
+      <div class="cmp-steps">
+        <div class="cmp-step">
+          <span class="step-role">CLIENT</span>
+          <div class="step-body"><b>seal()</b> with directional key <code>client_tx</code></div>
+        </div>
+        <div class="cmp-connector"><span>Genuine wire datagram</span><span>↓</span></div>
+        <div class="cmp-step">
+          <span class="step-role">SERVER</span>
+          <div class="step-body"><b>unseal()</b> with matching key <code>server_rx</code></div>
+        </div>
+        <div class="cmp-connector"><span>Poly1305 tag verified &amp; seq fresh</span><span>↓</span></div>
+        <div class="cmp-verdict ok">
+          <b>✓ ACCEPTED (rc 0)</b>
+          <small>Plaintext released to application · last_seq updated</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="cmp-flow hostile">
+      <div class="cmp-head">
+        <span class="chip c-bad"><span class="g">✕</span>ATTACK: ${esc(title)}</span>
+        <b>Hostile In-Transit Manipulation Flow</b>
+      </div>
+      <div class="cmp-steps">
+        <div class="cmp-step">
+          <span class="step-role">CLIENT</span>
+          <div class="step-body">Seals genuine packet</div>
+        </div>
+        <div class="cmp-connector"><span class="bad">Adversary intercepts packet</span><span>↓</span></div>
+        <div class="cmp-step hostile-node">
+          <span class="step-role hostile">ATTACKER</span>
+          <div class="step-body"><b class="bad">${esc(mutation)}</b></div>
+        </div>
+        <div class="cmp-connector"><span class="bad">Altered datagram forwarded to server</span><span>↓</span></div>
+        <div class="cmp-step">
+          <span class="step-role">SERVER</span>
+          <div class="step-body"><b>unseal()</b> evaluates packet in C</div>
+        </div>
+        <div class="cmp-connector"><span class="bad">Security invariant triggered</span><span>↓</span></div>
+        <div class="cmp-verdict bad">
+          <b>✕ ATTACK REJECTED (${attackId === 'replay' || attackId === 'reorder' ? 'rc -3' : attackId === 'short' ? 'rc -1' : 'rc -2'})</b>
+          <small>Plaintext buffer WIPED with sodium_memzero() · ZERO data released</small>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---- MITM Centerpiece Comparison (Rule 23) --------------------------------
+ * Static comparison of Unauthenticated crypto_kx vs Authenticated Handshake */
+export function mitmComparisonDiagram(m) {
+  return `<div class="mitm-comparison-grid">
+    <div class="mitm-card plain">
+      <div class="mitm-card-head">
+        <span class="chip c-warn"><span class="g">!</span>WITHOUT AUTHENTICATED IDENTITY</span>
+        <h4>Plain crypto_kx Handshake</h4>
+        <p class="faint small">Pure X25519 Diffie–Hellman key exchange without peer authentication (as defined in the brief).</p>
+      </div>
+      <div class="mitm-diagram">
+        <div class="entity"><b>CLIENT</b><small>initiator</small></div>
+        <div class="wire-channel bad">
+          <span class="flow-lbl">Client eph pubkey <code>client_eph</code></span>
+          <span class="arr-down">↓ intercepted</span>
+        </div>
+        <div class="entity hostile"><b>ATTACKER (MALLORY)</b><small>Active Man-in-the-Middle</small></div>
+        <div class="wire-channel bad">
+          <span class="flow-lbl">Substituted pubkey <code>mallory_eph</code></span>
+          <span class="arr-down">↓ forwarded</span>
+        </div>
+        <div class="entity"><b>SERVER</b><small>responder</small></div>
+      </div>
+      <div class="mitm-consequences bad">
+        <div class="conseq-row"><span>Identity Verification:</span> <b>✕ NOT PROTECTED</b></div>
+        <div class="conseq-row"><span>Attacker Capability:</span> <b>Mallory decrypts and alters all messages</b></div>
+        <div class="conseq-row"><span>Live Evidence:</span> <code>${m?.plain ? esc(m.plain.read_text) : 'Mallory reads &amp; rewrites traffic'}</code></div>
+        <div class="conseq-verdict bad">RESULT: MITM POSSIBLE (Documented Limitation)</div>
+      </div>
+    </div>
+
+    <div class="mitm-card signed">
+      <div class="mitm-card-head">
+        <span class="chip c-ok"><span class="g">✓</span>WITH SIGNED HANDSHAKE EXTENSION</span>
+        <h4>Ed25519-Signed Identity Handshake</h4>
+        <p class="faint small">Server signs the ephemeral exchange with its long-term Ed25519 private key; Client verifies against pinned <code>server_pk.bin</code>.</p>
+      </div>
+      <div class="mitm-diagram">
+        <div class="entity"><b>CLIENT</b><small>has pinned server_pk.bin</small></div>
+        <div class="wire-channel ok">
+          <span class="flow-lbl">Client eph pubkey <code>client_eph</code></span>
+          <span class="arr-down">↓</span>
+        </div>
+        <div class="entity hostile blocked"><b>MALLORY (BLOCKED)</b><small>Cannot forge server signature</small></div>
+        <div class="wire-channel ok">
+          <span class="flow-lbl">Server signs: <code>server_eph ‖ client_eph</code></span>
+          <span class="arr-down">↓ verified</span>
+        </div>
+        <div class="entity"><b>SERVER</b><small>signs with server_sk.bin</small></div>
+      </div>
+      <div class="mitm-consequences ok">
+        <div class="conseq-row"><span>Identity Verification:</span> <b>✓ SIGNATURE VERIFIED (Ed25519)</b></div>
+        <div class="conseq-row"><span>Server Identity:</span> <b>✓ Pinned to known public key</b></div>
+        <div class="conseq-row"><span>Key Swap Attack:</span> <b>✓ REJECTED (Signature invalid)</b></div>
+        <div class="conseq-row"><span>Own Signature Attack:</span> <b>✓ REJECTED (Key not pinned)</b></div>
+        <div class="conseq-row"><span>Replay Signature:</span> <b>✓ REJECTED (Transcript mismatch)</b></div>
+        <div class="conseq-verdict ok">RESULT: ALL MITM ATTACKS BLOCKED</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---- "Why This Matters" Explanations (Rule 29) ----------------------------
+ * Rigorous, concise cryptographic justifications */
+export function whyThisMatters(topic) {
+  const K = {
+    aead: {
+      title: 'Authenticated Encryption with Associated Data (AEAD)',
+      prop: 'Confidentiality + Integrity Together',
+      body: 'Traditional ciphers (such as AES-CBC without MAC) provide confidentiality but allow bit-flipping attacks. ChaCha20-Poly1305 guarantees that any modification to the ciphertext or associated data immediately causes unseal() to abort and release zero plaintext.'
+    },
+    aad: {
+      title: 'Associated Authenticated Data (AAD)',
+      prop: 'Cleartext Metadata Integrity',
+      body: 'AAD allows protocol metadata (such as sequence numbers, version headers, or routing information) to travel in plaintext so receivers can inspect it early, while still binding it cryptographically to the authentication tag so it cannot be altered by an adversary.'
+    },
+    replay: {
+      title: 'Monotonic Sequence Replay Window',
+      prop: 'Packet Freshness',
+      body: 'Encrypting data does not stop an attacker from recording a legitimate packet and re-transmitting it later (e.g. replaying a payment instruction). Enforcing seq > last_seq rejects duplicates. Updating last_seq ONLY after tag verification prevents window-poisoning denial of service.'
+    },
+    directional: {
+      title: 'Directional Key Separation (crypto_kx)',
+      prop: 'Reflection Attack Prevention',
+      body: 'If a client and server shared a single symmetric key for both directions, an adversary could reflect a client packet back into the client receiver. Generating complementary pairs (client_tx == server_rx, client_rx == server_tx, client_tx ≠ client_rx) guarantees a sender can never ingest its own traffic.'
+    },
+    handshake: {
+      title: 'Cryptographic Identity Binding',
+      prop: 'Man-in-the-Middle Defense',
+      body: 'Unauthenticated Diffie-Hellman establishes confidentiality between endpoints, but cannot prove who the peer is. Signing the ephemeral key exchange with a pinned long-term Ed25519 identity binds the session to the authentic server, completely defeating key-substitution MITM attacks.'
+    },
+    keywrap: {
+      title: 'Password-Based Key Wrapping (Argon2id + Secretbox)',
+      prop: 'At-Rest Secret Protection',
+      body: 'Private keys stored unencrypted on disk are vulnerable to unauthorized access or disk image exfiltration. Argon2id derives a high-entropy key through memory-hard computation (64 MiB), rendering GPU/ASIC offline dictionary attacks computationally infeasible.'
+    }
+  };
+
+  const item = K[topic];
+  if (!item) return '';
+
+  return `<div class="why-matters-card">
+    <div class="wm-head">
+      <span class="wm-tag">WHY THIS MATTERS</span>
+      <span class="wm-prop">${esc(item.prop)}</span>
+    </div>
+    <h4 class="wm-title">${esc(item.title)}</h4>
+    <p class="wm-body">${esc(item.body)}</p>
+  </div>`;
+}
+

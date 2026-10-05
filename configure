@@ -1,0 +1,39 @@
+#!/bin/sh
+# Configure script for Secure Channel with libsodium
+set -e
+
+echo "=== Secure Channel Workshop Configuration ==="
+echo "Checking build prerequisites..."
+
+# Check compiler
+if command -v gcc >/dev/null 2>&1; then
+  echo "  [✓] C compiler: $(gcc --version | head -n1)"
+elif command -v clang >/dev/null 2>&1; then
+  echo "  [✓] C compiler: $(clang --version | head -n1)"
+else
+  echo "  [✕] ERROR: C compiler (gcc or clang) not found." >&2
+  exit 1
+fi
+
+# Check GNU Make
+if command -v make >/dev/null 2>&1; then
+  echo "  [✓] Build tool: $(make --version | head -n1)"
+else
+  echo "  [✕] ERROR: make not found." >&2
+  exit 1
+fi
+
+# Check libsodium
+if pkg-config --exists libsodium 2>/dev/null; then
+  echo "  [✓] libsodium: $(pkg-config --modversion libsodium)"
+else
+  echo "  [!] Notice: libsodium not detected via pkg-config. Falling back to -lsodium."
+fi
+
+# Ensure keys directory exists with secure permissions
+mkdir -p keys
+chmod 700 keys 2>/dev/null || true
+
+echo "Configuration completed successfully."
+echo "Run 'make all' to build the project, or 'make check' to execute all test suites."
+exit 0

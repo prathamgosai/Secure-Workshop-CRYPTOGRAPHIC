@@ -1,5 +1,6 @@
 import { store, engine, run } from '../store.js';
-import { esc, time, busy, chip, icons, pad2, packetFlow, panelHead, toast, $ } from '../ui.js';
+import { esc, time, busy, chip, icons, pad2, packetFlow, panelHead, toast, $, architecturalTiers, fullCryptoPipeline, whyThisMatters } from '../ui.js';
+import { securityDecisionTrace } from '../trace.js';
 
 const STATES = [
   ['INIT', ['Load libsodium', 'Load / generate keys'], 'sodium_init() · ephemeral X25519 key pairs'],
@@ -9,7 +10,7 @@ const STATES = [
 ];
 
 /* Session lifecycle: static diagram, current state highlighted. Timestamps
- * and event text come from the engine. */
+ * and event text come directly from the engine. */
 export function lifecycle() {
   const cur = store.session.state;
   const idx = STATES.findIndex((s) => s[0] === cur);
@@ -28,13 +29,14 @@ export function lifecycle() {
   }).join('')}</ol>`;
 }
 
-/* Evidence gathered so far, only from real results. */
+/* Evidence gathered so far, strictly from real engine and test results. */
 function evidence() {
   const hist = store.attacks.history;
   const blocked = (id) => hist.some((h) => h.id === id && h.pass);
   const reqPass = !!(store.tests && store.tests.total > 0 && store.tests.failed === 0);
+  const extPass = !!(store.testsExtended && store.testsExtended.total > 0 && store.testsExtended.failed === 0);
   const accepted = store.packets.some((p) => p.verdict === 'ACCEPTED');
-  return { blocked, reqPass, accepted };
+  return { blocked, reqPass, extPass, accepted };
 }
 
 function pillars() {
@@ -127,12 +129,17 @@ function posture() {
 function heroStatus() {
   const t = store.tests;
   const s = store.session;
+  const { blocked, reqPass } = evidence();
+  const isProtected = s.state === 'SECURE' && (s.authenticated || blocked('wrongkey')) && (reqPass || blocked('tamper'));
+
   const score = t && t.total
     ? `<div class="score ${t.failed ? 'bad' : 'ok'}">${t.passed}<small> / ${t.total}</small></div>${chip(t.failed ? 'FAILED' : 'PASS', { lg: true })}`
     : `${chip('NOT RUN', { lg: true })}<span class="faint small" style="max-width:240px">Run the security test suite to populate verified results.</span>`;
+
   return `
     <div class="meta"><span class="k">Session</span><span>${chip(s.state === 'SECURE' ? 'SECURE' : s.state === 'TERMINATE' ? 'TERMINATED' : s.state, { lg: true, tone: s.state === 'SECURE' ? 'ok' : s.state === 'TERMINATE' ? 'muted' : 'info' })}</span></div>
-    <div class="meta"><span class="k">Security tests · required suite</span>${score}</div>`;
+    <div class="meta"><span class="k">Security Posture</span><span>${isProtected ? chip('PROTECTED', { lg: true, tone: 'ok', text: 'VERDICT: PROTECTED' }) : chip(s.state === 'SECURE' ? 'ACTIVE' : 'READY', { lg: true, tone: 'info', text: s.state === 'SECURE' ? 'AEAD ACTIVE' : 'SYSTEM READY' })}</span></div>
+    <div class="meta"><span class="k">Security tests · required</span>${score}</div>`;
 }
 
 function metrics() {
@@ -170,14 +177,14 @@ export default {
       <section class="panel hero" aria-labelledby="ov-title">
         <div class="hero-top">
           <div>
-            <span class="eyebrow accent">Secure communication lab</span>
-            <h1 id="ov-title">Secure Channel</h1>
-            <p class="lede">Authenticated encrypted communication laboratory. Every status on this console is reported by the C implementation — <code>sc_engine</code>, the test suites and the OpenSSL script — never by the browser.</p>
+            <span class="eyebrow accent">Cryptographic Command Center</span>
+            <h1 id="ov-title">SECURE CHANNEL</h1>
+            <p class="lede">A live visualization of authenticated key exchange, encrypted communication, packet integrity, replay protection, attack resistance, and secure key handling powered by libsodium.</p>
             <div class="actions">
               <button class="btn btn-primary" data-a="hs">Start secure session</button>
-              <button class="btn" data-a="send">Send packet</button>
+              <button class="btn" data-a="send">Send encrypted packet</button>
               <button class="btn" data-a="tests">Run security tests</button>
-              <button class="btn btn-ghost" data-a="keys">Generate keys</button>
+              <button class="btn btn-ghost" data-a="keys">Generate identity keys</button>
             </div>
           </div>
           <div class="hero-status" id="ov-status"></div>
@@ -185,28 +192,56 @@ export default {
         <div id="ov-pillars"></div>
         <div class="primitives" aria-label="Cryptographic primitives">
           <div class="prim"><b>ChaCha20-Poly1305</b><span>AEAD packets</span></div>
-          <div class="prim"><b>X25519</b><span>Key exchange</span></div>
+          <div class="prim"><b>X25519</b><span>Key exchange (crypto_kx)</span></div>
           <div class="prim"><b>Ed25519</b><span>Identity · signatures</span></div>
           <div class="prim"><b>Argon2id</b><span>Key wrapping KDF</span></div>
           <div class="prim"><b>seq &gt; last_seq</b><span>Replay protection</span></div>
         </div>
       </section>
 
+      <section class="section" aria-labelledby="ov-arch">
+        <div class="section-head"><div><span class="eyebrow">Trust Boundaries</span><h2 id="ov-arch">System architecture &amp; trust model</h2><p>Untrusted presentation layer is strictly isolated from the controlled bridge and the trusted C cryptographic boundary.</p></div></div>
+        ${architecturalTiers()}
+      </section>
+
+      <section class="section" aria-labelledby="ov-pipe">
+        <div class="section-head"><div><span class="eyebrow">Cryptographic AEAD</span><h2 id="ov-pipe">Cryptographic pipeline</h2><p>Static ten-stage message lifecycle: message validation → sequence binding → nonce generation → AAD authentication → ChaCha20 encryption → transport → unseal → release.</p></div></div>
+        <div id="ov-pipeline"></div>
+      </section>
+
+      <section class="section" aria-labelledby="ov-trace">
+        <div class="section-head"><div><span class="eyebrow">Instrumentation</span><h2 id="ov-trace">Security decision trace</h2><p>Every important cryptographic operation explained step-by-step with real return codes from unseal().</p></div></div>
+        <div id="ov-decision"></div>
+      </section>
+
       <section class="section" aria-labelledby="ov-life">
-        <div class="section-head"><div><span class="eyebrow">Protocol</span><h2 id="ov-life">Session lifecycle</h2><p>INIT → AUTH → SECURE → TERMINATE · timestamps from engine events</p></div></div>
+        <div class="section-head"><div><span class="eyebrow">Protocol</span><h2 id="ov-life">Session lifecycle</h2><p>INIT → AUTH → SECURE → TERMINATE · state transitions and timestamps from engine events</p></div></div>
         <div id="ov-sm"></div>
         <div id="ov-metrics"></div>
       </section>
 
       <section class="section" aria-labelledby="ov-post">
-        <div class="section-head"><div><span class="eyebrow">Verification</span><h2 id="ov-post">Security posture</h2><p>Each row reflects checks actually executed in this session. Select a row for the explanation.</p></div></div>
+        <div class="section-head"><div><span class="eyebrow">Verification</span><h2 id="ov-post">Security posture &amp; evidence matrix</h2><p>Each row reflects checks actually executed in this session. Select a row for technical citations and libsodium implementation details.</p></div></div>
         <div id="ov-posture"></div>
       </section>
 
       <section class="section panel" aria-labelledby="ov-last">
         ${panelHead('<span id="ov-last">Last transmission</span>', 'Static view of the most recent packet on the wire and the server&rsquo;s verdict from unseal()')}
         <div id="ov-flow"></div>
+      </section>
+
+      <section class="section" aria-labelledby="ov-why">
+        <div class="section-head"><div><span class="eyebrow">Cryptographic Foundations</span><h2 id="ov-why">Why these primitives matter</h2></div></div>
+        <div class="why-grid">
+          ${whyThisMatters('aead')}
+          ${whyThisMatters('aad')}
+          ${whyThisMatters('replay')}
+          ${whyThisMatters('directional')}
+          ${whyThisMatters('handshake')}
+          ${whyThisMatters('keywrap')}
+        </div>
       </section>`;
+
     root.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-a]');
       if (!b) return;
@@ -230,5 +265,9 @@ export default {
     $('#ov-posture').innerHTML = posture();
     document.querySelectorAll('#ov-posture details').forEach((d, i) => { d.open = !!open[i]; });
     $('#ov-flow').innerHTML = lastTransmission();
+
+    const latest = store.deliveries[0] || store.packets[0];
+    $('#ov-pipeline').innerHTML = fullCryptoPipeline(latest, latest?.delivered);
+    $('#ov-decision').innerHTML = securityDecisionTrace(latest);
   },
 };

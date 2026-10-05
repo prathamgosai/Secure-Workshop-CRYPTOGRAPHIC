@@ -5,6 +5,7 @@ import { store, subscribe, notify, engine, addEvent, systemStatus } from './stor
 import { esc, time, $, toast, icons, chip } from './ui.js';
 import { createDemo } from './demo.js';
 import overview from './views/overview.js';
+import examiner from './views/examiner.js';
 import handshake from './views/handshake.js';
 import channel from './views/channel.js';
 import inspector from './views/inspector.js';
@@ -18,7 +19,7 @@ import logs from './views/logs.js';
 import limits from './views/limits.js';
 
 const GROUPS = [
-  ['Lab', [overview, handshake, channel, inspector]],
+  ['Lab', [overview, examiner, handshake, channel, inspector]],
   ['Security', [attacks, tests, vault, wrap, openssl]],
   ['Analysis', [bench, logs, limits]],
 ];
@@ -176,6 +177,25 @@ async function waitForEngine() {
   toast('Cannot reach sc_engine. Is the bridge running (npm run dev)?', true);
 }
 
+let presentationMode = false;
+function setMode(isPres) {
+  presentationMode = isPres;
+  document.body.classList.toggle('mode-presentation', isPres);
+  const btnPres = $('#mode-presentation');
+  const btnEng = $('#mode-engineering');
+  if (btnPres && btnEng) {
+    btnPres.setAttribute('aria-pressed', String(isPres));
+    btnPres.className = `btn btn-sm ${isPres ? 'btn-primary' : 'btn-ghost'}`;
+    btnEng.setAttribute('aria-pressed', String(!isPres));
+    btnEng.className = `btn btn-sm ${!isPres ? 'btn-primary' : 'btn-ghost'}`;
+  }
+}
+
+$('#mode-presentation')?.addEventListener('click', () => setMode(true));
+$('#mode-engineering')?.addEventListener('click', () => setMode(false));
+$('#mode-examiner')?.addEventListener('click', () => navigate('examiner', { focus: true }));
+setMode(false);
+
 subscribe((topic) => {
   renderHeader();
   renderSystem();
@@ -194,3 +214,4 @@ window.addEventListener('hashchange', () => {
   const id = location.hash.slice(1);
   if (byId[id] && current?.id !== id) navigate(id);
 });
+

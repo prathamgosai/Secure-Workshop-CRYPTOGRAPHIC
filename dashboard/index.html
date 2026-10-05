@@ -42,6 +42,11 @@
         <span id="sys-detail" class="sys-detail">starting engine…</span>
       </div>
       <div class="head-spacer"></div>
+      <div class="view-modes" role="group" aria-label="View mode">
+        <button id="mode-presentation" class="btn btn-sm" aria-pressed="false" title="Examiner presentation view">Presentation</button>
+        <button id="mode-engineering" class="btn btn-sm btn-ghost" aria-pressed="true" title="Deep engineering telemetry">Engineering</button>
+        <button id="mode-examiner" class="btn btn-sm btn-ghost" title="One-screen examiner audit overview">Examiner</button>
+      </div>
       <div class="demo-controls" role="group" aria-label="Demo mode">
         <button id="demo-start" class="btn btn-primary">Start demo</button>
         <button id="demo-pause" class="btn" disabled>Pause</button>
@@ -65,16 +70,60 @@
 
     <section id="demo-panel" class="demo-panel" hidden aria-live="polite" aria-label="Demo mode">
       <div class="demo-top">
-        <span class="chip c-info">Demo mode</span>
-        <span class="demo-stepno">STEP <span id="demo-num">01</span> <small>/ <span id="demo-total">20</span></small></span>
-        <span id="demo-title" class="demo-title"></span>
+        <div class="demo-meta">
+          <span class="chip c-info">LIVE CRYPTO DEMO ENGINE</span>
+          <span class="demo-stepno">SLIDE <span id="demo-num">01</span> <small>/ <span id="demo-total">21</span></small></span>
+          <span id="demo-title" class="demo-title"></span>
+          <span id="demo-decision" class="demo-decision"></span>
+        </div>
+        <div class="demo-actions" role="group" aria-label="Demo controls">
+          <button id="demo-prev" class="btn btn-sm btn-ghost" title="Previous slide (view historical evidence)">← Prev</button>
+          <button id="demo-run-step" class="btn btn-sm" title="Re-execute current operation against C backend">Run Step</button>
+          <button id="demo-next" class="btn btn-sm btn-primary" title="Execute next operation and advance">Next →</button>
+          <button id="demo-notes-toggle" class="btn btn-sm btn-ghost" title="Toggle Presenter Notes &amp; Script">Presenter Notes</button>
+          <button id="demo-reset" class="btn btn-sm btn-ghost" title="Reset session and demo state">Reset</button>
+          <button id="demo-close" class="btn btn-sm btn-ghost" title="Exit demo mode" aria-label="Close">✕</button>
+        </div>
       </div>
-      <div class="demo-cols">
-        <div><div class="k">What just happened</div><div id="demo-narration" class="v"></div></div>
-        <div><div class="k">Why it matters</div><div id="demo-why" class="v muted"></div></div>
-        <div><div class="k">Security property</div><div id="demo-props" class="demo-props"></div></div>
-      </div>
+
+      <div id="demo-purpose" class="demo-purpose"></div>
+      <div id="demo-nav-bar" class="demo-nav-bar" role="tablist" aria-label="21 Presentation Slides"></div>
       <div id="demo-segs" class="demo-segs" aria-hidden="true"></div>
+
+      <div id="demo-precond-banner" class="demo-precond-banner" hidden></div>
+
+      <div class="demo-stage">
+        <!-- Hero Evidence Container (changes dynamically per slide) -->
+        <div id="demo-evidence" class="demo-evidence-panel"></div>
+
+        <!-- Live Security Decision Trace for active slide -->
+        <div id="demo-trace-box" class="demo-trace-box"></div>
+      </div>
+
+      <div class="demo-body">
+        <div class="demo-cols">
+          <div><div class="k">WHAT HAPPENED? (Technical Execution)</div><div id="demo-narration" class="v"></div></div>
+          <div><div class="k">WHY IS IT SECURE? (Security Invariants)</div><div id="demo-why-secure" class="v"></div></div>
+          <div><div class="k">WHY THIS MATTERS (Core Cryptography)</div><div id="demo-why" class="v muted"></div></div>
+          <div><div class="k">SECURITY PROPERTY</div><div id="demo-props" class="demo-props"></div></div>
+        </div>
+
+        <!-- Presenter Notes & Examiner Script (Collapsible) -->
+        <div id="demo-notes-drawer" class="demo-notes-drawer" hidden>
+          <div class="notes-head"><span class="eyebrow">EXAMINER PRESENTATION SCRIPT &amp; DEMO NOTES</span></div>
+          <div class="notes-grid">
+            <div class="note-box"><span class="k">WHAT TO SAY</span><p id="note-say" class="note-text"></p></div>
+            <div class="note-box"><span class="k">WHAT TO POINT AT</span><p id="note-point" class="note-text"></p></div>
+            <div class="note-box"><span class="k">SECURITY PRINCIPLE</span><p id="note-principle" class="note-text"></p></div>
+            <div class="note-box"><span class="k">NEXT RESULT</span><p id="note-next" class="note-text"></p></div>
+          </div>
+        </div>
+
+        <div class="demo-trace">
+          <div class="k">Behind the scenes · <span id="demo-trace-count">0 calls</span> <span class="faint">— every request, command and C event in this step</span></div>
+          <div id="demo-trace" class="demo-trace-list" role="log" aria-label="Background activity for this step"></div>
+        </div>
+      </div>
     </section>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </div>

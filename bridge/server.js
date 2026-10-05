@@ -210,7 +210,21 @@ function parseTap(text) {
   return { tests, total: tests.length, passed, failed: tests.length - passed };
 }
 
+/* Shown in the dashboard's background-activity trace: the exact command
+ * lines this bridge executed for an action (no secrets are ever arguments). */
+const execLabel = (cmd, args) => [IS_WIN ? `wsl -d ${DISTRO} --` : null, 'env NO_COLOR=1', cmd, ...args].filter(Boolean).join(' ');
+
 async function runAction(what) {
+  const execs = [];
+  const t0 = Date.now();
+  const recorder = (cmd, args = [], ms) => { execs.push(execLabel(cmd, args)); return runC(cmd, args, ms); };
+  const out = await runActionInner(what, recorder);
+  out.bridge = { exec: execs, ms: Date.now() - t0 };
+  return out;
+}
+
+// runC is shadowed by the recording wrapper passed in by runAction.
+async function runActionInner(what, runC) {
   const started = Date.now();
   if (what === 'build') {
     const r = await runC('make', ['-s', 'all'], 300000);
@@ -352,7 +366,10 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     if (url.pathname === '/api/engine') {
       const line = engineLine(String(body.cmd || ''), body.arg === undefined ? '' : String(body.arg));
-      return send(res, 200, await engineCall(line));
+      const t0 = Date.now();
+      const resp = await engineCall(line);
+      resp.bridge = { stdin: line, process: IS_WIN ? `wsl -d ${DISTRO} -- ./sc_engine` : './sc_engine', ms: Date.now() - t0 };
+      return send(res, 200, resp);
     }
     const run = /^\/api\/run\/([a-z-]+)$/.exec(url.pathname);
     if (run) {

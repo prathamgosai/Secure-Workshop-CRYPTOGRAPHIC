@@ -29,6 +29,7 @@ export const store = {
   bench: null,
   tcp: { server: false, client: false, events: [] },
   errors: [],
+  trace: [],             // background activity: one entry per bridge call (see traceStart)
 };
 
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
@@ -81,9 +82,66 @@ function capturePackets(resp) {
   if (store.deliveries.length > 50) store.deliveries.length = 50;
 }
 
+/* ---- background activity trace ---------------------------------------------
+ * One entry per call the dashboard makes: what was requested, what the bridge
+ * actually executed (from resp.bridge), how long it took, the C engine's own
+ * events and a summary built from the real response. Public data only. */
+let traceId = 0;
+
+function traceStart(kind, name, arg) {
+  const t = { id: ++traceId, ts: Date.now(), t0: performance.now(), kind, name, arg, pending: true, before: store.session.state };
+  store.trace.push(t);
+  if (store.trace.length > 400) store.trace.splice(0, store.trace.length - 400);
+  notify('trace');
+  return t;
+}
+
+function traceEnd(t, resp) {
+  Object.assign(t, {
+    pending: false,
+    ms: Math.round(performance.now() - t.t0),
+    ok: resp.ok !== false,
+    error: resp.error || null,
+    bridge: resp.bridge || null,
+    after: store.session.state,
+    // engine calls: the C engine's events; test programs: each TAP line they printed
+    events: resp.tests
+      ? resp.tests.map((x) => ({ level: x.ok ? 'PASS' : 'FAIL', msg: `${x.ok ? 'ok' : 'not ok'} ${x.n} - ${x.name}` }))
+      : (resp.events || []).map((e) => ({ level: e.level, msg: e.msg })),
+    summary: summarize(t.kind, t.name, resp),
+  });
+}
+
+const fx = (n, d = 2) => (typeof n === 'number' ? n.toFixed(d) : '?');
+function summarize(kind, name, r) {
+  if (r.ok === false && r.error) return `error: ${r.error}`;
+  if (kind === 'run') {
+    if (name === 'tests' || name === 'tests-extended') return r.total !== undefined ? `${r.passed}/${r.total} tests passed · exit code ${r.code}` : `exit code ${r.code}`;
+    if (name === 'keygen') return `exit code ${r.code} · key files written to keys/`;
+    if (name === 'openssl') return r.cbc ? `CBC tamper ${r.cbc.tamper_undetected ? 'NOT detected' : 'detected'} (openssl exit ${r.cbc.openssl_exit}) · same change under AEAD ${r.aead_tamper_rejected ? 'rejected' : 'not checked'}` : 'no result';
+    if (name === 'bench') return r.results ? `${r.results.length} data points measured · libsodium ${r.libsodium}` : 'no result';
+    if (name === 'build') return `make exit code ${r.code}`;
+    return `exit code ${r.code}`;
+  }
+  const s = r.session;
+  switch (name) {
+    case 'hello': return `libsodium ${r.libsodium} initialised`;
+    case 'vault': return `${r.files?.filter((f) => f.exists).length ?? 0} key files scanned · permissions ${r.permissions_ok ? 'OK (0600 private / 0644 public)' : 'NOT as expected'}`;
+    case 'handshake': return `${r.mode} handshake · client_tx == server_rx: ${r.complementary ? 'yes' : 'no'} · tx ≠ rx: ${r.directional ? 'yes' : 'no'}${r.mode === 'signed' ? ` · Ed25519 signature ${r.signature === 1 ? 'valid' : 'invalid'}` : ''} · ${fx(r.elapsed_ms)} ms inside C`;
+    case 'send': { const st = r.steps?.[0]; return st ? `seal(): ${st.packet.length} B packet, seq ${st.packet.seq} → unseal(): ${st.verdict} (rc ${st.rc})` : 'no packet'; }
+    case 'attack': { const a = r.attack; return a ? `${a.title}: ${a.verdict} · rc ${a.rc} (expected ${a.expected_rc}) · ${a.pass ? 'behaved as expected' : 'UNEXPECTED'}` : 'no result'; }
+    case 'wrap': return `${r.password?.startsWith('correct') ? 'correct' : 'wrong'} test passphrase · Argon2id ${r.memlimit_mib} MiB · ${r.password?.startsWith('correct') ? (r.unwrapped ? 'MAC verified, key unwrapped' : 'unwrap FAILED') : (r.secret_released ? 'secret RELEASED' : 'MAC failed, nothing released')}`;
+    case 'mitm': return `plain crypto_kx: MITM ${r.vulnerability_shown ? 'read and rewrote traffic (known limitation)' : 'did not succeed'} · signed handshake: ${r.extension_blocks_mitm ? 'all MITM variants blocked' : 'NOT all blocked'}`;
+    default: return s ? `state ${s.state} · epoch ${s.epoch}` : 'done';
+  }
+}
+
 /* Calls the engine and folds the real response into the store. */
 export async function engine(cmd, arg) {
-  const resp = await api.engine(cmd, arg);
+  const t = traceStart('engine', cmd, arg);
+  let resp;
+  try { resp = await api.engine(cmd, arg); }
+  catch (e) { resp = { ok: false, error: e.message }; }
   for (const e of resp.events || []) addEvent(e.level, e.msg, 'engine', e.ts);
   if (!resp.ok && resp.error) addEvent('ERROR', `${cmd}: ${resp.error}`, 'engine');
   recordState(resp);
@@ -108,14 +166,19 @@ export async function engine(cmd, arg) {
     at.history.unshift({ ts: Date.now(), ...a });
   }
   if (resp.cmd === 'terminate' || resp.cmd === 'reset') store.handshake = resp.cmd === 'reset' ? null : store.handshake;
+  traceEnd(t, resp);
   notify(cmd);
   return resp;
 }
 
 export async function run(what) {
   addEvent('INFO', `running ${labelFor(what)}…`, 'bridge');
+  const t = traceStart('run', what);
   notify('events');
-  const r = await api.run(what);
+  let r;
+  try { r = await api.run(what); }
+  catch (e) { r = { ok: false, error: e.message }; }
+  traceEnd(t, r);
   if (what === 'tests') store.tests = r;
   if (what === 'tests-extended') store.testsExtended = r;
   if (what === 'openssl') store.openssl = r;

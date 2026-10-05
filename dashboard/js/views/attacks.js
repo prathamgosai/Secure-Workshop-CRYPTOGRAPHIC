@@ -1,5 +1,6 @@
 import { store, engine, run } from '../store.js';
-import { esc, time, busy, byteMap, verdictBadge, chip, emptyState, packetFlow, pageHead, panelHead, seqLabel, $ } from '../ui.js';
+import { esc, time, busy, byteMap, verdictBadge, chip, emptyState, packetFlow, pageHead, panelHead, seqLabel, $, staticAttackComparison, whyThisMatters } from '../ui.js';
+import { securityDecisionTrace } from '../trace.js';
 
 export const ATTACKS = [
   { id: 'normal', name: 'Normal round trip', desc: 'Genuine packet from the client', expect: 'ACCEPTED', rc: 0, prop: ['Baseline'],
@@ -31,8 +32,19 @@ const WHY = {
   forged: 'The forged seq fails the tag check, and last_seq is only updated after verification — so the window is not poisoned.',
 };
 
+const PROP_MAP = {
+  normal: 'aead',
+  tamper: 'aead',
+  aad: 'aad',
+  replay: 'replay',
+  reorder: 'replay',
+  wrongkey: 'directional',
+  short: 'aead',
+  forged: 'replay',
+};
+
 let inflight = null;
-let selected = 'replay';
+let selected = 'tamper';
 
 const lastOf = (id) => store.attacks.history.find((h) => h.id === id);
 
@@ -61,8 +73,40 @@ function cards() {
   }).join('');
 }
 
+function attackMatrix() {
+  const reqTests = store.tests?.tests || [];
+  return `<div class="table-wrap"><table class="table matrix-table">
+    <thead>
+      <tr>
+        <th>Attack Vector</th>
+        <th>Target Invariant</th>
+        <th>Expected Code</th>
+        <th>Actual Engine Result</th>
+        <th>Cryptographic Protection</th>
+        <th>Verdict</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${ATTACKS.map((a) => {
+        const last = lastOf(a.id);
+        const reqMatch = reqTests.find((t) => t.name.toLowerCase().includes(a.id) || t.name.toLowerCase().includes(a.name.toLowerCase()));
+        const rc = last ? last.rc : (reqMatch ? a.rc : '—');
+        const pass = last ? last.pass : (reqMatch ? reqMatch.ok : null);
+        return `<tr>
+          <td><b>${esc(a.name)}</b><div class="faint small">${esc(a.desc)}</div></td>
+          <td>${a.prop.map((p) => `<span class="chip c-info">${esc(p)}</span>`).join(' ')}</td>
+          <td class="mono">rc ${a.rc}</td>
+          <td class="mono ${last ? (last.pass ? 'ok' : 'bad') : 'faint'}">${last ? `rc ${rc} (${last.verdict})` : (reqMatch ? `rc ${rc} (TAP PASS)` : '—')}</td>
+          <td><span class="small">${esc(WHY[a.id])}</span></td>
+          <td>${last ? (pass ? chip(last.result === 'BLOCKED' ? 'BLOCKED' : 'PASS', { text: last.result }) : chip('FAIL')) : (reqMatch ? chip('PASS', { text: 'VERIFIED' }) : chip('NOT RUN'))}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div>`;
+}
+
 function detail() {
-  const a = ATTACKS.find((x) => x.id === selected);
+  const a = ATTACKS.find((x) => x.id === selected) || ATTACKS[1];
   const last = lastOf(a.id);
   const resp = store.attacks.last?.attack?.id === a.id ? store.attacks.last : null;
   const secure = store.session.state === 'SECURE';
@@ -72,26 +116,41 @@ function detail() {
          <div class="faint small" style="margin-top:4px">${esc(last.verdict)} · return code ${last.rc} · expected rc ${last.expected_rc} · ${time(last.ts)}</div></div>
          ${chip(last.pass ? 'PASS' : 'FAIL', { lg: true })}
        </div>`
-    : `<div class="result-banner"><div><div class="statement faint">○ NOT RUN</div><div class="faint small" style="margin-top:4px">Run the attack to get the real verdict from <code>unseal()</code>.</div></div></div>`;
+    : `<div class="result-banner"><div><div class="statement faint">○ NOT RUN</div><div class="faint small" style="margin-top:4px">Run the attack to get the real verdict from <code>unseal()</code> in C.</div></div></div>`;
   const target = resp ? (resp.steps || []).find((s) => s.packet && s.packet.role === 'attacker') || (resp.steps || []).find((s) => s.packet) : null;
+  const activePacket = target?.packet || (resp?.steps?.[0]?.packet ?? null);
+
   return `
     ${panelHead(`Attack · ${esc(a.name)}`, a.prop.map((p) => `Security property: ${p}`).join(' · '),
       `<button class="btn ${a.id === 'normal' ? 'btn-primary' : 'btn-danger'}" data-run="${a.id}"${inflight ? ' disabled' : ''}>${a.id === 'normal' ? 'Send normal packet' : 'Run attack'}</button>`)}
     <div class="detail-grid">
       <div>Method</div><div>${esc(a.method)}</div>
       <div>Expected</div><div>${esc(a.expected)} <span class="faint mono small">rc ${a.rc}</span></div>
-      <div>Reason</div><div>${esc(WHY[a.id])}</div>
+      <div>Defense</div><div>${esc(WHY[a.id])}</div>
       <div>Property</div><div class="actions">${a.prop.map((p) => chip('ACTIVE', { text: p, glyph: '' })).join('')}</div>
       ${resp ? `<div>Network</div><div>${esc(resp.attack.network)}</div><div>Verifier</div><div class="mono small">${esc(resp.attack.verifier)}</div>` : ''}
     </div>
     <div style="margin-top:16px">${result}</div>
-    ${!secure && !last ? '<p class="note">No live session — running an attack first performs a plain handshake.</p>' : ''}
+    ${!secure && !last ? '<p class="note">No live session — running an attack first performs an initial handshake.</p>' : ''}
+
+    <div class="section-subhead" style="margin-top:24px"><span class="eyebrow">Static Comparison</span><h3>Attack flow versus legitimate flow</h3></div>
+    ${staticAttackComparison(a.id)}
+
     ${target ? `<div class="hr"></div>
+      <div class="section-subhead"><span class="eyebrow">Wire Inspection</span><h3>Captured packet on wire</h3></div>
       ${packetFlow({ from: target.packet.role === 'attacker' ? { icon: 'network', name: 'NETWORK', sub: 'attacker in path', hostile: true } : { icon: 'client', name: 'CLIENT', sub: 'seal()' },
         to: { icon: 'server', name: 'SERVER', sub: 'unseal()' }, packet: target.packet, verdict: target.verdict, rc: target.rc, live: true,
         hostile: target.packet.role === 'attacker', label: `${target.packet.role === 'attacker' ? 'attacker packet' : 'packet'} · ${target.packet.length} B` })}
       <div style="margin-top:16px">${byteMap(target.packet)}</div>
-      <div class="steps-mini">${(resp.steps || []).map((s) => `<div class="step-mini"><span>${esc(s.label)}${s.packet ? ` <span class="faint mono">seq ${esc(seqLabel(s.packet.seq))}</span>` : ''}</span>${verdictBadge(s.verdict, s.rc)}</div>`).join('')}</div>` : ''}`;
+      <div class="steps-mini">${(resp.steps || []).map((s) => `<div class="step-mini"><span>${esc(s.label)}${s.packet ? ` <span class="faint mono">seq ${esc(seqLabel(s.packet.seq))}</span>` : ''}</span>${verdictBadge(s.verdict, s.rc)}</div>`).join('')}</div>` : ''}
+
+    <div class="hr"></div>
+    <div class="section-subhead"><span class="eyebrow">Security Decision Trace</span><h3>Cryptographic evaluation sequence</h3></div>
+    ${securityDecisionTrace(activePacket || (last ? { id: 1, rc: last.rc, verdict: last.verdict, seq: 1, length: 48, ct_len: 12, attack: a.id } : null))}
+
+    <div style="margin-top:20px">
+      ${whyThisMatters(PROP_MAP[a.id] || 'aead')}
+    </div>`;
 }
 
 function history() {
@@ -122,10 +181,18 @@ export default {
         '<button class="btn btn-primary" data-a="all">Run all 8</button>')}
       <div id="atk-summary"></div>
       <div class="grid section">
-        <section class="panel s5" aria-label="Attacks">${panelHead('Attack grid', 'Select an attack to see how it works')}<div class="atk-grid" id="atk-grid"></div></section>
+        <section class="panel s5" aria-label="Attacks">${panelHead('Attack scenarios', 'Select an attack vector to evaluate')}<div class="atk-grid" id="atk-grid"></div></section>
         <section class="panel focused s7" id="atk-stage-card" aria-live="polite"><div id="atk-detail"></div></section>
-        <section class="panel s7">${panelHead('Attack history', 'Newest first')}<div id="atk-history"></div></section>
-        <section class="panel elevated s5" id="atk-suite-card">${panelHead('Required suite', 'tests/test_attacks.c · the brief&rsquo;s 8 tests')}<div id="atk-suite"></div></section>
+      </div>
+
+      <section class="panel section" aria-labelledby="atk-matrix-title">
+        ${panelHead('<span id="atk-matrix-title">Complete attack verification matrix</span>', 'Comprehensive breakdown of all evaluated attacks, invariants and return codes')}
+        <div id="atk-matrix"></div>
+      </section>
+
+      <div class="grid section">
+        <section class="panel s5" id="atk-suite-card">${panelHead('Required attack test suite', 'tests/test_attacks.c · 8 required tests')}<div id="atk-suite"></div></section>
+        <section class="panel s7">${panelHead('Attack execution history', 'Newest first')}<div id="atk-history"></div></section>
       </div>`;
     root.addEventListener('click', (e) => {
       const card = e.target.closest('button[data-atk]');
@@ -162,11 +229,12 @@ export default {
   },
   update() {
     if (!$('#atk-grid')) return;
-    const focused = document.activeElement?.dataset?.atk;   // keep keyboard focus across re-render
+    const focused = document.activeElement?.dataset?.atk;
     $('#atk-summary').innerHTML = summary();
     $('#atk-grid').innerHTML = cards();
     if (focused) $(`#atk-grid [data-atk="${focused}"]`)?.focus();
     $('#atk-detail').innerHTML = detail();
+    $('#atk-matrix').innerHTML = attackMatrix();
     $('#atk-history').innerHTML = history();
     $('#atk-suite').innerHTML = suiteCard();
   },

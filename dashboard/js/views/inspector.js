@@ -1,5 +1,6 @@
 import { store } from '../store.js';
 import { esc, timeMs, byteMap, hexGroups, verdictBadge, chip, emptyState, packetAnatomy, pageHead, panelHead, seqLabel, $ } from '../ui.js';
+import { securityDecisionTrace } from '../trace.js';
 
 let selected = null;
 
@@ -45,6 +46,8 @@ function detail(p) {
         <div class="tile"><div class="meta"><span class="k">Verdict from unseal()</span><span class="v">${verdictBadge(p.verdict, p.rc)}</span><span class="faint small" style="margin-top:6px">${esc(p.reason)}</span>${p.rekeyed ? `<span style="margin-top:6px">${chip('EXTENSION', { tone: 'violet', text: 'Triggered re-key' })}</span>` : ''}</div></div>
       </div>
     </div>
+    <div class="hr"></div>
+    ${securityDecisionTrace(p)}
     <div class="hr"></div>
     <div class="panel-title" style="margin-bottom:10px">Raw bytes</div>
     ${byteMap(p)}`;
