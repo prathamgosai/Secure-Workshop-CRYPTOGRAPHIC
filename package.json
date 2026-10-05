@@ -1,0 +1,14 @@
+{
+  "name": "secure-workshop-root",
+  "private": true,
+  "description": "Shortcuts that forward to the project in secure-workshop/.",
+  "scripts": {
+    "dev": "cd secure-workshop && npm run dev",
+    "start": "cd secure-workshop && npm start",
+    "terminal": "cd secure-workshop && npm run terminal",
+    "test": "cd secure-workshop && npm test",
+    "check": "cd secure-workshop && npm run check",
+    "test:ui": "cd secure-workshop && npm run test:ui",
+    "audit": "cd secure-workshop && npm run audit"
+  }
+}
