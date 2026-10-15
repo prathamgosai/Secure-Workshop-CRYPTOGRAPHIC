@@ -257,6 +257,7 @@ export default {
     this.update();
   },
   update() {
+    if (!$('#ov-status')) return;
     $('#ov-status').innerHTML = heroStatus();
     $('#ov-pillars').innerHTML = pillars();
     $('#ov-sm').innerHTML = lifecycle();

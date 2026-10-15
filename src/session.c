@@ -3,7 +3,7 @@
 #include <string.h>
 
 static void free_keys(session *s) {
-    unsigned char **keys[] = { &s->c_tx, &s->c_rx, &s->s_tx, &s->s_rx };
+    unsigned char **keys[] = { &s->c_tx, &s->c_rx, &s->s_tx, &s->s_rx, &s->eph_csk, &s->eph_ssk };
     for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) {
         sodium_free(*keys[i]);          /* zeroes before releasing; NULL is a no-op */
         *keys[i] = NULL;
@@ -68,6 +68,65 @@ fail:
     s->state = ST_INIT;
     s->authenticated = 0;
     return rc;
+}
+
+int session_hs_begin(session *s) {
+    uint32_t rekey_every = s->rekey_every;
+    free_keys(s);
+    session_init(s);
+    s->rekey_every = rekey_every;
+    s->eph_csk = sodium_malloc(KX_SK_LEN);
+    s->eph_ssk = sodium_malloc(KX_SK_LEN);
+    if (!s->eph_csk || !s->eph_ssk) { free_keys(s); return SESSION_ERR_CRYPTO; }
+    crypto_kx_keypair(s->client_pk, s->eph_csk);
+    crypto_kx_keypair(s->server_pk, s->eph_ssk);
+    return SESSION_OK;
+}
+
+int session_hs_derive(session *s, handshake_result *hr) {
+    memset(hr, 0, sizeof *hr);
+    hr->signature = -1;
+    if (s->state != ST_INIT || !s->eph_csk || !s->eph_ssk) return SESSION_ERR_STATE;
+    s->c_tx = sodium_malloc(SESSION_KEY_LEN); s->c_rx = sodium_malloc(SESSION_KEY_LEN);
+    s->s_tx = sodium_malloc(SESSION_KEY_LEN); s->s_rx = sodium_malloc(SESSION_KEY_LEN);
+    int rc = SESSION_OK;
+    if (!s->c_tx || !s->c_rx || !s->s_tx || !s->s_rx ||
+        crypto_kx_client_session_keys(s->c_rx, s->c_tx, s->client_pk, s->eph_csk, s->server_pk) != 0 ||
+        crypto_kx_server_session_keys(s->s_rx, s->s_tx, s->server_pk, s->eph_ssk, s->client_pk) != 0) {
+        rc = SESSION_ERR_CRYPTO;
+    } else {
+        hr->complementary = sodium_memcmp(s->c_tx, s->s_rx, SESSION_KEY_LEN) == 0 &&
+                            sodium_memcmp(s->c_rx, s->s_tx, SESSION_KEY_LEN) == 0;
+        hr->directional = sodium_memcmp(s->c_tx, s->c_rx, SESSION_KEY_LEN) != 0;
+        if (!hr->complementary || !hr->directional) rc = SESSION_ERR_CRYPTO;
+    }
+    /* The ephemeral secrets are no longer needed either way. */
+    sodium_free(s->eph_csk); s->eph_csk = NULL;
+    sodium_free(s->eph_ssk); s->eph_ssk = NULL;
+    if (rc != SESSION_OK) { free_keys(s); s->state = ST_INIT; return rc; }
+    s->state = ST_AUTH;
+    return SESSION_OK;
+}
+
+int session_hs_auth(session *s, const identity *id, handshake_result *hr) {
+    unsigned char sig[SIG_LEN];
+    hr->signature = -1;
+    if (s->state != ST_AUTH || s->c_tx == NULL) return SESSION_ERR_STATE;
+    hr->signature = hs_sign(sig, s->server_pk, s->client_pk, id->sk) == 0 &&
+                    hs_verify(sig, s->server_pk, s->client_pk, id->pk) == 0;
+    if (!hr->signature) { s->authenticated = 0; return SESSION_ERR_SIG; }
+    s->authenticated = 1;
+    return SESSION_OK;
+}
+
+int session_hs_secure(session *s) {
+    if (s->state != ST_AUTH || s->c_tx == NULL || !s->authenticated) return SESSION_ERR_STATE;
+    s->next_seq = 1;
+    s->epoch = 1;
+    s->in_epoch = 0;
+    s->server_rs = (replay_state){0, 0};
+    s->state = ST_SECURE;
+    return SESSION_OK;
 }
 
 int session_seal(session *s, const unsigned char *pt, size_t pt_len,

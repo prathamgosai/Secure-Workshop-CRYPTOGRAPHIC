@@ -70,6 +70,7 @@ export default {
     this.update();
   },
   update() {
+    if (!$('#os-status')) return;
     const o = store.openssl;
     $('#os-status').innerHTML = o ? chip(o.ok ? 'PASS' : 'FAILED', { text: o.ok ? 'All steps as expected' : `${o.failures ?? '?'} step(s) unexpected` }) : chip('NOT RUN');
     $('#os-evidence').innerHTML = evidence(o);

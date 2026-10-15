@@ -4,6 +4,9 @@ import { api } from './api.js';
 import { store, subscribe, notify, engine, addEvent, systemStatus } from './store.js';
 import { esc, time, $, toast, icons, chip } from './ui.js';
 import { createDemo } from './demo.js';
+import { initBootSequence } from './boot.js';
+import landing from './views/landing.js';
+import commandCenter from './views/command-center.js';
 import overview from './views/overview.js';
 import examiner from './views/examiner.js';
 import handshake from './views/handshake.js';
@@ -17,15 +20,26 @@ import openssl from './views/openssl.js';
 import bench from './views/bench.js';
 import logs from './views/logs.js';
 import limits from './views/limits.js';
+import pipeline from './views/pipeline.js';
 
 const GROUPS = [
-  ['Lab', [overview, examiner, handshake, channel, inspector]],
-  ['Security', [attacks, tests, vault, wrap, openssl]],
-  ['Analysis', [bench, logs, limits]],
+  ['Command Center', [landing, commandCenter, handshake, channel, inspector]],
+  ['Security Lab', [attacks, tests, vault, wrap, openssl]],
+  ['System & Specs', [examiner, bench, logs, limits]],
 ];
 const VIEWS = GROUPS.flatMap(([, vs]) => vs);
 const byId = Object.fromEntries(VIEWS.map((v) => [v.id, v]));
+byId['overview'] = landing;
+byId['landing'] = landing;
+byId['command_center'] = commandCenter;
+byId['live-lab'] = commandCenter;
+byId['pipeline'] = commandCenter;
+
 const groupOf = Object.fromEntries(GROUPS.flatMap(([g, vs]) => vs.map((v) => [v.id, g])));
+groupOf['overview'] = 'Command Center';
+groupOf['landing'] = 'Command Center';
+groupOf['command_center'] = 'Command Center';
+groupOf['pipeline'] = 'Command Center';
 let current = null;
 
 /* ---- routing ------------------------------------------------------------- */
@@ -33,13 +47,16 @@ let current = null;
 const ctx = { navigate, views: byId };
 
 function navigate(id, { focus = false } = {}) {
-  const view = byId[id] || overview;
+  const view = byId[id] || landing;
+  if (current && current.unmount && current !== view) {
+    try { current.unmount(); } catch (e) { console.error(e); }
+  }
   current = view;
   document.querySelectorAll('.nav-item').forEach((t) => {
     if (t.dataset.view === view.id) t.setAttribute('aria-current', 'page');
     else t.removeAttribute('aria-current');
   });
-  $('#head-group').textContent = groupOf[view.id];
+  $('#head-group').textContent = groupOf[view.id] || 'Command Center';
   $('#head-title').textContent = view.label;
   document.title = `${view.label} · Secure Channel — Cryptographic Security Command Center`;
   const root = $('#view');
@@ -142,6 +159,8 @@ function onStream(msg) {
     store.tcp.events.push(msg);
     if (store.tcp.events.length > 400) store.tcp.events.splice(0, 100);
     addEvent(msg.level || 'INFO', `[tcp ${msg.src}] ${msg.msg}`, `tcp-${msg.src}`, msg.ts);
+  } else if (msg.type === 'toolchain') {
+    store.toolchain = msg.toolchain;
   } else if (msg.type === 'tcp-status') {
     store.tcp[msg.role] = msg.running;
     if (!msg.running) addEvent('INFO', `TCP ${msg.role} process exited (${msg.code ?? 0})`, 'bridge');
@@ -157,12 +176,12 @@ async function boot() {
   booted = true;
   const h = await engine('hello');
   if (!h.ok) { booted = false; return; }
-  store.stateLog.INIT = { ts: h.events?.[0]?.ts || Date.now(), msg: `libsodium ${h.libsodium} initialised` };
+  store.stateLog.INIT = { ts: h.events?.[0]?.ts ?? null, msg: `libsodium ${h.libsodium} initialised` };
   await engine('vault');
 }
 
 async function waitForEngine() {
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 240; i++) {
     try {
       const h = await api.health();
       store.platform = h.platform;
@@ -170,9 +189,10 @@ async function waitForEngine() {
       store.tcp.server = h.tcp?.server || false;
       store.tcp.client = h.tcp?.client || false;
       if (h.engine) { store.engineUp = true; notify('health'); await boot(); return; }
+      if (h.build === 'failed') { notify('health'); toast('Build failed: see the terminal running npm run dev', true); return; }
       notify('health');
     } catch { /* bridge not reachable yet */ }
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise((r) => setTimeout(r, 250));
   }
   toast('Cannot reach sc_engine. Is the bridge running (npm run dev)?', true);
 }
@@ -200,14 +220,37 @@ subscribe((topic) => {
   renderHeader();
   renderSystem();
   renderRail();
-  try { current?.update(topic); } catch (e) { console.error(e); }
+  try { current?.update?.(topic); } catch (e) { console.error(e); }
 });
 
 renderNav();
 navigate((location.hash || '#overview').slice(1));
 renderHeader();
 renderSystem();
-createDemo(ctx);
+const demo = createDemo(ctx);
+window.cinemaLab = demo;
+
+// Open Cinematic Lab directly from header button
+$('#btn-open-cinema')?.addEventListener('click', () => {
+  demo.goTo(0, { runIt: true });
+});
+
+// Boot-up Sequence ("The Dark Network Wakes Up")
+const bootShown = sessionStorage.getItem('sc_boot_shown');
+if (!bootShown) {
+  initBootSequence({
+    onEnterCinema: () => {
+      demo.goTo(0, { runIt: true });
+    },
+    onEnterLab: () => {
+      navigate('command-center', { focus: true });
+    },
+    onSkip: () => {
+      // Keep on current view
+    },
+  });
+}
+
 api.stream(onStream);
 waitForEngine();
 window.addEventListener('hashchange', () => {

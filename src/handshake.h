@@ -48,6 +48,8 @@ void fingerprint_str(char out[32], const unsigned char fp[FINGERPRINT_LEN]);
 /* ---- MITM scenario (stretch 2) --------------------------------------- */
 #define MITM_TEXT_MAX 32
 typedef struct {
+    int plain_keys_swapped;      /* crypto_kx completed with Mallory on both sides */
+    char sent_text[MITM_TEXT_MAX]; /* what the client actually sealed             */
     int plain_read;              /* Mallory decrypted the client's message       */
     int plain_forge;             /* server accepted Mallory's rewritten message  */
     char read_text[MITM_TEXT_MAX];
@@ -60,5 +62,9 @@ typedef struct {
 } mitm_report;
 
 void mitm_run(mitm_report *r);
+/* The two halves of mitm_run(), callable separately (fields of r they do
+ * not own are left untouched). */
+void mitm_plain(mitm_report *r);
+void mitm_signed(mitm_report *r);
 
 #endif

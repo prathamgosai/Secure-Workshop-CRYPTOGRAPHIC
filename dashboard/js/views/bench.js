@@ -95,6 +95,7 @@ export default {
   update() {
     const b = store.bench;
     const body = $('#bn-body');
+    if (!body) return;
     if (!b) { if (!body.innerHTML) body.innerHTML = emptyState('No measurements yet. Run the benchmark to measure ChaCha20-Poly1305, AES-256-GCM and the full seal() path on this machine.'); return; }
     if (!b.results) { body.innerHTML = `<div class="alert" role="alert"><b>BENCHMARK FAILED</b><span>${esc(b.error || 'no results')}</span></div>`; return; }
     const key = `${b.checksum}:${b.results.length}`;

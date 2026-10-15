@@ -70,6 +70,7 @@ export default {
     this.update();
   },
   update() {
+    if (!$('#lg-filters')) return;
     const isTrace = mode === 'trace';
     $('#lg-filters').hidden = isTrace;
     $('#lg-q').parentElement.hidden = isTrace;

@@ -101,6 +101,7 @@ export default {
     this.update();
   },
   update() {
+    if (!$('#vk-grid')) return;
     const v = store.vault;
     const f = (p) => v?.files?.find((x) => x.path === p);
     const fp = store.session.key_fingerprints;

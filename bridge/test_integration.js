@@ -89,8 +89,13 @@ async function main() {
     const html = await page.text();
     check('dashboard page served', page.status === 200 && html.includes('Cryptographic Security Command Center'));
     const css = await (await fetch(`${BASE}/css/app.css`)).text();
-    check('dashboard stylesheet is static (no @keyframes, no transitions)',
-      !/@keyframes/.test(css) && !/transition\s*:(?!\s*none)/.test(css) && !/animation\s*:(?!\s*none)/.test(css));
+    // Motion policy: Cinematic transitions and animations enabled for interactive
+    // movie laboratory, fully disabled under prefers-reduced-motion and body.reduced-motion.
+    check('motion policy: cinematic animations active with accessibility support',
+      /animation\s*:(?!\s*none)/.test(css) && /transition\s*:(?!\s*none)/.test(css));
+    check('motion policy: prefers-reduced-motion turns every .mo-* animation off',
+      /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*animation:\s*none !important/.test(css) ||
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.mo-in[^}]*animation:\s*none !important/.test(css));
     check('Content-Security-Policy restricts scripts to same origin', /script-src 'self'/.test(page.headers.get('content-security-policy') || ''));
     check('POST without dashboard header rejected (403)', (await post('/api/engine', { cmd: 'hello' }, { 'X-SC-Client': 'x' })).status === 403);
     check('foreign Host header rejected (DNS-rebinding guard, 421)', (await rawRequest({ path: '/api/health', headers: { Host: 'evil.example:8799' } })) === 421);
@@ -188,6 +193,49 @@ async function main() {
     check('TCP: tampered packet rejected', has(/server:ALERT:packet rejected: authentication failed/));
     check('TCP: replayed packet rejected', has(/server:BLOCK:packet rejected: replay/));
     check('TCP: keys wiped on disconnect', has(/client:WIPE/) && has(/server:WIPE/));
+
+    console.log('\n  -- live demo path (stepwise handshake, one held packet)');
+    r = await eng('hs', 'begin');
+    check('hs begin: INIT with ephemeral key pairs, no session keys', r.ok && r.state_after === 'INIT' && r.ephemeral_secrets_held && !r.session_keys_present);
+    r = await eng('seal', 'too early');
+    check('seal refused in INIT', !r.ok);
+    r = await eng('hs', 'secure');
+    check('hs secure refused before derive/auth', !r.ok && r.session.state === 'INIT');
+    r = await eng('hs', 'derive');
+    check('hs derive: AUTH, complementary + directional, ephemeral secrets wiped', r.ok && r.state_after === 'AUTH' && r.complementary && r.directional && r.ephemeral_secrets_wiped);
+    r = await eng('hs', 'secure');
+    check('hs secure refused while unauthenticated', !r.ok && r.session.state === 'AUTH');
+    r = await eng('hs', 'auth');
+    check('hs auth: Ed25519 transcript signature verified', r.ok && r.signature === 1 && r.authenticated);
+    r = await eng('hs', 'secure');
+    check('hs secure: SECURE after readiness checks', r.ok && r.state_after === 'SECURE' && r.readiness.keys_complementary && r.readiness.authenticated);
+    r = await eng('seal', 'held demo message');
+    const held = r.packet;
+    check('seal holds a packet without delivering it', r.ok && held && r.session.has_seq === false);
+    r = await eng('intercept', 'replay');
+    check('intercept replay refused before the held packet is accepted', !r.ok);
+    r = await eng('inspect');
+    check('inspect: same bytes, structure valid, plaintext not visible', r.ok && r.packet.ct_hex === held.ct_hex && r.checks.length_ok && r.checks.plaintext_not_visible && !r.checks.delivered);
+    r = await eng('deliver');
+    check('deliver: accepted, decrypted text equals sealed text', r.ok && r.rc === 0 && r.steps[0].plaintext_matches && r.steps[0].plaintext === 'held demo message');
+    const ic = {};
+    for (const t of ['tamper', 'replay', 'aad', 'forged', 'wrongkey']) ic[t] = await eng('intercept', t);
+    check('intercept tamper -> rc -2, state unchanged, original accepted', ic.tamper.ok && ic.tamper.attack.pass && ic.tamper.attack.rc === -2);
+    check('intercept replay (exact held bytes) -> rc -3', ic.replay.ok && ic.replay.attack.pass && ic.replay.attack.rc === -3 && ic.replay.steps[0].packet.ct_hex === held.ct_hex);
+    check('intercept aad (held seq +1000) -> rc -2, last_seq unchanged', ic.aad.ok && ic.aad.attack.pass && !ic.aad.steps[0].state_changed);
+    check('intercept forged (held seq 2^64-1) -> rc -2, follow-up accepted', ic.forged.ok && ic.forged.attack.pass);
+    check('intercept wrongkey -> rc -2, nothing released', ic.wrongkey.ok && ic.wrongkey.attack.pass && ic.wrongkey.steps.every((s) => !s.plaintext_released));
+    r = await eng('wrap', 'correct');
+    r = await eng('unwrap', 'wrong');
+    check('unwrap wrong (existing file): MAC fails, output zeroed', r.ok && r.pass && r.rc !== 0 && !r.secret_released && r.output_zeroed);
+    r = await eng('unwrap', 'correct');
+    check('unwrap correct (existing file): key equals original', r.ok && r.pass && r.unwrapped);
+    r = await eng('mitm', 'plain');
+    check('mitm plain only: keys swapped, Mallory read what the client sent, no signed section', r.ok && r.vulnerability_shown && r.plain.keys_substituted && r.plain.sent_text === r.plain.read_text && r.signed === undefined);
+    r = await eng('mitm', 'signed');
+    check('mitm signed only: all variants blocked', r.ok && r.extension_blocks_mitm && r.plain === undefined);
+    r = (await post('/api/engine', { cmd: 'hs', arg: 'skip' })).json;
+    check('bridge rejects unknown hs step / intercept type', r.ok === false && (await post('/api/engine', { cmd: 'intercept', arg: 'normal' })).json.ok === false);
 
     console.log('\n  -- termination + secret hygiene');
     r = await eng('terminate');

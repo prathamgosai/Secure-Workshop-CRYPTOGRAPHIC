@@ -28,6 +28,9 @@ typedef struct {
     uint32_t in_epoch;          /* accepted messages in this epoch  */
     int authenticated;          /* 1 if the signed handshake was used */
     unsigned char client_pk[KX_PK_LEN], server_pk[KX_PK_LEN];  /* public */
+    /* Ephemeral X25519 secret keys, only alive between session_hs_begin()
+     * and session_hs_derive() (stepwise handshake used by the live demo). */
+    unsigned char *eph_csk, *eph_ssk;
 } session;
 
 typedef struct {
@@ -40,6 +43,17 @@ void session_init(session *s);
 /* INIT -> AUTH -> SECURE. id == NULL: plain crypto_kx (as in the brief).
  * id != NULL: server signs the transcript, client verifies with id->pk. */
 int  session_handshake(session *s, const identity *id, handshake_result *hr);
+/* The same handshake split into its four protocol steps, so each can be run
+ * and observed on its own (dashboard live demo):
+ *   begin  : fresh session, ephemeral key pairs generated      (state INIT)
+ *   derive : crypto_kx rx/tx keys, ephemeral secrets wiped      (INIT -> AUTH)
+ *   auth   : server signs the transcript, client verifies it    (AUTH)
+ *   secure : readiness checks, data phase enabled               (AUTH -> SECURE)
+ * session_hs_secure() refuses unless the signature step succeeded. */
+int  session_hs_begin(session *s);
+int  session_hs_derive(session *s, handshake_result *hr);
+int  session_hs_auth(session *s, const identity *id, handshake_result *hr);
+int  session_hs_secure(session *s);
 /* Client side: seal the next message with client_tx. */
 int  session_seal(session *s, const unsigned char *pt, size_t pt_len,
                   unsigned char *pkt, size_t pkt_cap, size_t *pkt_len, uint64_t *seq);

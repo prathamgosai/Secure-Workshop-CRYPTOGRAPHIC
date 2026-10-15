@@ -8,7 +8,7 @@ export default {
   mount(root, ctx) {
     root.innerHTML = `
       ${pageHead('Examiner Mode · High-Density Security Overview', 'Examiner Command Briefing', 'One-screen cryptographic audit panel designed for academic examination and technical review. All indicators reflect real runtime state from C/libsodium.',
-        '<button class="btn btn-primary" data-a="audit">Run Full Audit</button><button class="btn btn-ghost" data-a="demo">Launch 21-Slide Demo</button>')}
+        '<button class="btn btn-primary" data-a="audit">Run Full Audit</button><button class="btn btn-ghost" style="border-color:#00f0ff; color:#00f0ff;" data-a="demo">🎬 Launch Cinematic Lab (21 Scenes)</button>')}
       <div class="examiner-grid">
         <!-- Panel 1: System & Protocol Telemetry -->
         <section class="panel s4 ex-card">
@@ -85,8 +85,8 @@ export default {
         b.textContent = 'Run Full Audit';
       }
       if (b.dataset.a === 'demo') {
-        const startBtn = document.getElementById('demo-start');
-        if (startBtn) startBtn.click();
+        if (window.cinemaLab) window.cinemaLab.goTo(0, { runIt: true });
+        else document.getElementById('btn-open-cinema')?.click();
       }
     });
 

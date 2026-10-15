@@ -204,6 +204,7 @@ export const icons = {
   file: svg('<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>'),
   memory: svg('<rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>'),
   caret: '<svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  pipeline: svg('<circle cx="4" cy="6" r="2.2"/><circle cx="12" cy="6" r="2.2"/><circle cx="20" cy="6" r="2.2"/><circle cx="8" cy="14" r="2.2"/><circle cx="16" cy="14" r="2.2"/><circle cx="12" cy="21" r="2.2"/><path d="M6 6h4M14 6h4M5.5 7.8l1.5 4.4M10.5 7.8l-1.5 4.4M13.5 7.8l1.5 4.4M18.5 7.8l-1.5 4.4M9.2 15.8l2 3.4M14.8 15.8l-2 3.4"/>'),
 };
 
 /* ---- Architectural Tiers & Trust Boundary (Rules 39, 40) -------------------

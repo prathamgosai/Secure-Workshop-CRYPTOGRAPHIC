@@ -125,6 +125,7 @@ export default {
     return engine('handshake', m);
   },
   update() {
+    if (!$('#hs-diagram')) return;
     const hs = store.handshake && store.handshake.cmd === 'handshake' ? store.handshake : null;
     $('#hs-diagram').innerHTML = diagram(hs);
     $('#hs-status').innerHTML = !hs ? chip('NOT RUN')

@@ -177,8 +177,8 @@ export default {
   mount(root, ctx) {
     this.ctx = ctx;
     root.innerHTML = `
-      ${pageHead('Task 4 · Security boundaries', 'Attack simulation lab', 'Each attack asks <code>sc_engine</code> to build the hostile packet and push it through the live server&rsquo;s <code>unseal()</code>. Verdict, return code and reason come straight back from C.',
-        '<button class="btn btn-primary" data-a="all">Run all 8</button>')}
+      ${pageHead('Task 4 · Security boundaries', 'ATTACK LAB — BREAK THE PACKET, TEST THE PROTECTION', 'Each attack asks <code>sc_engine</code> to build the hostile packet and push it through the live server&rsquo;s <code>unseal()</code>. Verdict, return code, state side-effects and reasons come straight back from C.',
+        '<button class="btn btn-primary" data-a="all">Run all 8 attacks</button>')}
       <div id="atk-summary"></div>
       <div class="grid section">
         <section class="panel s5" aria-label="Attacks">${panelHead('Attack scenarios', 'Select an attack vector to evaluate')}<div class="atk-grid" id="atk-grid"></div></section>

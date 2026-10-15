@@ -46,7 +46,61 @@ function spawnC(cmd, cmdArgs = []) {
     : spawn(full[0], full.slice(1), { cwd: ROOT });
 }
 
+/* On Windows every `wsl -d ... -- cmd` costs ~1 s just to start. One-shot
+ * programs therefore run through a single persistent WSL bash ("worker"),
+ * one at a time; each job's stdout/stderr come back base64-encoded on one
+ * marker line together with the real exit code. The engine and the TCP
+ * processes keep their own long-running processes. */
+const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const worker = { proc: null, buf: '', jobs: new Map(), queue: Promise.resolve(), seq: 0 };
+
+function startWorker() {
+  const proc = spawn('wsl', ['-d', DISTRO, '--', 'bash', '--noprofile', '--norc'], { cwd: ROOT, windowsHide: true });
+  worker.proc = proc;
+  worker.buf = '';
+  proc.stdout.on('data', (d) => {
+    worker.buf += d;
+    let i;
+    while ((i = worker.buf.indexOf('\n')) >= 0) {
+      const line = worker.buf.slice(0, i);
+      worker.buf = worker.buf.slice(i + 1);
+      // fields are prefixed with '=' so an empty output still matches
+      const m = /^__SC__ (\d+) (-?\d+) =(\S*) =(\S*)$/.exec(line.trim());
+      if (!m) continue;
+      const job = worker.jobs.get(Number(m[1]));
+      if (!job) continue;
+      worker.jobs.delete(Number(m[1]));
+      job.done({ code: Number(m[2]), stdout: Buffer.from(m[3], 'base64').toString('utf8'), stderr: Buffer.from(m[4], 'base64').toString('utf8') });
+    }
+  });
+  proc.stderr.on('data', () => { /* job stderr is captured per job */ });
+  proc.on('close', () => {
+    if (worker.proc === proc) worker.proc = null;
+    for (const [, job] of worker.jobs) job.done({ code: -1, stdout: '', stderr: 'WSL worker exited' });
+    worker.jobs.clear();
+  });
+  return proc;
+}
+
+function runInWorker(cmd, cmdArgs, timeoutMs) {
+  const exec = () => new Promise((resolve) => {
+    const proc = worker.proc || startWorker();
+    const id = ++worker.seq;
+    const timer = setTimeout(() => {          // a hung job: kill the worker, a fresh one starts on demand
+      if (worker.jobs.has(id)) { worker.jobs.delete(id); proc.kill(); resolve({ code: -1, stdout: '', stderr: 'timeout' }); }
+    }, timeoutMs);
+    worker.jobs.set(id, { done: (r) => { clearTimeout(timer); resolve(r); } });
+    const line = [cmd, ...cmdArgs].map(shq).join(' ');
+    proc.stdin.write(`env NO_COLOR=1 ${line} </dev/null >/tmp/.sc_out_$$ 2>/tmp/.sc_err_$$; ` +
+      `printf '__SC__ %s %s %s %s\\n' ${id} $? "=$(base64 -w0 /tmp/.sc_out_$$)" "=$(base64 -w0 /tmp/.sc_err_$$)"\n`);
+  });
+  const p = worker.queue.then(exec, exec);
+  worker.queue = p.catch(() => {});
+  return p;
+}
+
 function runC(cmd, cmdArgs = [], timeoutMs = 120000) {
+  if (IS_WIN) return runInWorker(cmd, cmdArgs, timeoutMs);
   return new Promise((resolve) => {
     const child = spawnC(cmd, cmdArgs);
     let stdout = '';
@@ -106,11 +160,29 @@ function engineCall(line) {
 }
 
 const ATTACKS = ['normal', 'tamper', 'aad', 'replay', 'reorder', 'wrongkey', 'short', 'forged'];
+const INTERCEPTS = ['tamper', 'replay', 'aad', 'forged', 'wrongkey'];
 
 /* Whitelist + validation. Returns the engine line or throws. */
 function engineLine(cmd, arg) {
-  const simple = ['hello', 'status', 'vault', 'rekey', 'mitm', 'terminate', 'reset'];
+  const simple = ['hello', 'status', 'vault', 'rekey', 'terminate', 'reset', 'inspect', 'deliver'];
   if (simple.includes(cmd)) return cmd;
+  if (cmd === 'mitm') {
+    if (!['', 'plain', 'signed'].includes(arg)) throw new Error('mitm part must be plain or signed');
+    return arg ? `mitm ${arg}` : 'mitm';
+  }
+  if (cmd === 'hs') {
+    if (!['begin', 'derive', 'auth', 'secure'].includes(arg)) throw new Error('hs step must be begin, derive, auth or secure');
+    return `hs ${arg}`;
+  }
+  if (cmd === 'intercept') {
+    if (!INTERCEPTS.includes(arg)) throw new Error('unknown intercept');
+    return `intercept ${arg}`;
+  }
+  if (cmd === 'unwrap') {
+    if (!['correct', 'wrong'].includes(arg)) throw new Error('unwrap must be correct or wrong');
+    return `unwrap ${arg}`;
+  }
+  if (cmd === 'seal') return `seal ${cleanText(arg)}`;
   if (cmd === 'handshake') {
     if (!['plain', 'signed'].includes(arg)) throw new Error('handshake mode must be plain or signed');
     return `handshake ${arg}`;
@@ -296,7 +368,7 @@ function send(res, status, body, type = 'application/json') {
 /* DNS-rebinding guard: only accept requests addressed to this local server. */
 function hostAllowed(req) {
   const host = String(req.headers.host || '');
-  return host === `127.0.0.1:${PORT}` || host === `localhost:${PORT}`;
+  return host === `127.0.0.1:${PORT}` || host === `localhost:${PORT}` || host === `[::1]:${PORT}`;
 }
 
 function readBody(req) {
@@ -329,7 +401,7 @@ function serveStatic(req, res) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
+async function handle(req, res) {
   if (!hostAllowed(req)) return send(res, 421, { error: 'unexpected Host header' });
   const url = new URL(req.url, 'http://localhost');
 
@@ -351,6 +423,10 @@ const server = http.createServer(async (req, res) => {
       platform: IS_WIN ? `Windows → WSL (${DISTRO})` : process.platform,
       tcp: { server: !!tcp.server, client: !!tcp.client, port: TCP_PORT },
       toolchain,
+      build: buildState.status,
+      build_output: buildState.status === 'failed' ? buildState.output : undefined,
+      // live-demo engine commands this bridge accepts (a stale bridge lacks them)
+      features: ['hs', 'seal', 'inspect', 'deliver', 'intercept', 'unwrap', 'mitm-parts'],
     });
   }
 
@@ -383,7 +459,8 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     return send(res, 400, { ok: false, error: e.message });
   }
-});
+}
+const server = http.createServer(handle);
 
 /* ---- startup / shutdown ---------------------------------------------------- */
 
@@ -395,37 +472,47 @@ async function shutdown() {
   try { engine.proc?.stdin.write('quit\n'); } catch { /* already gone */ }
   if (tcp.client) tcp.client.stdin.end('quit\n');
   if (tcp.server) await runC('pkill', ['-TERM', '-f', `sc_server --port ${TCP_PORT}`], 5000);
+  try { worker.proc?.stdin.end('exit\n'); } catch { /* already gone */ }
   setTimeout(() => process.exit(0), 300);
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+/* The page is served immediately; build, engine start-up and toolchain
+ * detection follow and are reported through /api/health and the event stream. */
+let buildState = { status: 'building', output: '' };
 (async () => {
   log(IS_WIN ? `running C binaries through WSL (${DISTRO})` : 'running C binaries natively');
-  log('building (make -s all)...');
-  const b = await runC('make', ['-s', 'all'], 300000);
-  if (b.code !== 0) {
-    console.error(b.stdout + b.stderr);
-    console.error('[bridge] build failed - fix the errors above and retry');
-    process.exit(1);
-  }
-  // Versions shown in the dashboard status bar: detected, never assumed.
-  const first = (r) => (r.code === 0 ? r.stdout.trim().split('\n')[0] : null);
-  const [gcc, sodium, ossl] = await Promise.all([
-    runC('gcc', ['-dumpfullversion'], 15000),
-    runC('pkg-config', ['--modversion', 'libsodium'], 15000),
-    runC('openssl', ['version'], 15000),
-  ]);
-  toolchain = { gcc: first(gcc), libsodium: first(sodium), openssl: first(ossl), build_ok: true, build_ts: Date.now() };
-  startEngine();
   server.on('error', (e) => {
     console.error(`[bridge] cannot listen on 127.0.0.1:${PORT}: ${e.message}`);
     process.exit(1);
   });
+  // Also listen on ::1: browsers resolve "localhost" to ::1 first, and a refused
+  // IPv6 connection costs ~200 ms per request before falling back to IPv4.
+  const server6 = http.createServer(handle);
+  server6.on('error', () => { /* no IPv6 loopback: IPv4 alone still works */ });
+  server6.listen(PORT, '::1');
   server.listen(PORT, '127.0.0.1', () => {
     const url = `http://localhost:${PORT}`;
     console.log(`\n  SECURE CHANNEL // CRYPTOGRAPHIC COMMAND CENTER\n  ${url}\n  (Ctrl+C to stop)\n`);
     if (OPEN_BROWSER && IS_WIN) spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
   });
+  log('building (make -s all)...');
+  const t0 = Date.now();
+  const b = await runC('make', ['-s', 'all'], 300000);
+  if (b.code !== 0) {
+    buildState = { status: 'failed', output: (b.stdout + b.stderr).slice(-4000) };
+    console.error(b.stdout + b.stderr);
+    console.error('[bridge] build failed - fix the errors above and restart; the dashboard shows the failure');
+    broadcast({ type: 'engine', status: 'build-failed' });
+    return;
+  }
+  buildState = { status: 'ok', output: '', ms: Date.now() - t0 };
+  startEngine();
+  // Versions shown in the dashboard: detected (one worker job), never assumed.
+  const v = await runC('sh', ['-c', 'gcc -dumpfullversion; echo ---; pkg-config --modversion libsodium; echo ---; openssl version'], 15000);
+  const [gcc, sodium, ossl] = v.stdout.split('---').map((x) => x.trim().split('\n')[0] || null);
+  toolchain = { gcc, libsodium: sodium, openssl: ossl, build_ok: true, build_ts: Date.now() };
+  broadcast({ type: 'toolchain', toolchain });
+  log(`ready in ${Date.now() - t0} ms`);
 })();
-

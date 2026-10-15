@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Secure Channel — Cryptographic Security Command Center</title>
-  <meta name="description" content="Applied Cryptographic Design Lab: a libsodium secure channel with handshake, AEAD packets, attack lab, key vault, key wrapping, OpenSSL comparison and benchmarks, driven by the real C implementation.">
+  <title>SECURE CHANNEL — Cryptographic Security Command Center · The Cryptographic Cinematic Lab</title>
+  <meta name="description" content="Secure Channel: The Cryptographic Cinematic Lab — Cryptographic Security Command Center. Applied Cryptographic Design project using C, libsodium, and OpenSSL. 'Every Packet Tells a Story. Every Attack Has a Consequence.'">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/app.css">
   <script type="module" src="js/app.js"></script>
@@ -15,15 +15,15 @@
     <aside class="side" aria-label="Primary">
       <div class="brand">
         <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
-          <rect x="1" y="1" width="38" height="38" rx="11" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.16)"/>
-          <circle cx="11" cy="20" r="4" fill="none" stroke="#66e6ff" stroke-width="1.8"/>
-          <circle cx="29" cy="20" r="4" fill="none" stroke="#66e6ff" stroke-width="1.8"/>
+          <rect x="1" y="1" width="38" height="38" rx="11" fill="rgba(0,240,255,0.06)" stroke="rgba(0,240,255,0.3)"/>
+          <circle cx="11" cy="20" r="4" fill="none" stroke="#00f0ff" stroke-width="2"/>
+          <circle cx="29" cy="20" r="4" fill="none" stroke="#39ff14" stroke-width="2"/>
           <path d="M15 20h10" stroke="#aab3c0" stroke-width="1.4" stroke-dasharray="2 2"/>
-          <rect x="17.5" y="16.5" width="5" height="7" rx="1.4" fill="#45d99a"/>
+          <rect x="17.5" y="16.5" width="5" height="7" rx="1.4" fill="#b8a6ff"/>
         </svg>
         <div>
           <div class="brand-title">SECURE CHANNEL</div>
-          <div class="brand-sub">Applied Cryptographic Design Lab</div>
+          <div class="brand-sub">THE CRYPTOGRAPHIC CINEMATIC LAB</div>
         </div>
       </div>
       <nav id="nav" class="nav" aria-label="Sections"></nav>
@@ -48,9 +48,9 @@
         <button id="mode-examiner" class="btn btn-sm btn-ghost" title="One-screen examiner audit overview">Examiner</button>
       </div>
       <div class="demo-controls" role="group" aria-label="Demo mode">
-        <button id="demo-start" class="btn btn-primary">Start demo</button>
-        <button id="demo-pause" class="btn" disabled>Pause</button>
-        <button id="demo-next" class="btn">Next step</button>
+        <button id="btn-open-cinema" class="btn btn-primary" style="background: linear-gradient(135deg, #00f0ff, #0088cc); color: #020c14; font-weight: 700; border-color: #00f0ff; box-shadow: 0 0 14px rgba(0,240,255,0.4);" title="Launch the 21-Scene Cinematic Cybersecurity Experience">🎬 CINEMATIC LAB</button>
+        <button id="demo-start" class="btn btn-ghost" title="Interactive Step Demo">Interactive Demo</button>
+        <button id="demo-next" class="btn btn-ghost">Next step</button>
         <button id="demo-reset" class="btn btn-ghost">Reset</button>
       </div>
     </header>
@@ -68,63 +68,8 @@
 
     <footer class="foot" id="foot" aria-label="System status"></footer>
 
-    <section id="demo-panel" class="demo-panel" hidden aria-live="polite" aria-label="Demo mode">
-      <div class="demo-top">
-        <div class="demo-meta">
-          <span class="chip c-info">LIVE CRYPTO DEMO ENGINE</span>
-          <span class="demo-stepno">SLIDE <span id="demo-num">01</span> <small>/ <span id="demo-total">21</span></small></span>
-          <span id="demo-title" class="demo-title"></span>
-          <span id="demo-decision" class="demo-decision"></span>
-        </div>
-        <div class="demo-actions" role="group" aria-label="Demo controls">
-          <button id="demo-prev" class="btn btn-sm btn-ghost" title="Previous slide (view historical evidence)">← Prev</button>
-          <button id="demo-run-step" class="btn btn-sm" title="Re-execute current operation against C backend">Run Step</button>
-          <button id="demo-next" class="btn btn-sm btn-primary" title="Execute next operation and advance">Next →</button>
-          <button id="demo-notes-toggle" class="btn btn-sm btn-ghost" title="Toggle Presenter Notes &amp; Script">Presenter Notes</button>
-          <button id="demo-reset" class="btn btn-sm btn-ghost" title="Reset session and demo state">Reset</button>
-          <button id="demo-close" class="btn btn-sm btn-ghost" title="Exit demo mode" aria-label="Close">✕</button>
-        </div>
-      </div>
-
-      <div id="demo-purpose" class="demo-purpose"></div>
-      <div id="demo-nav-bar" class="demo-nav-bar" role="tablist" aria-label="21 Presentation Slides"></div>
-      <div id="demo-segs" class="demo-segs" aria-hidden="true"></div>
-
-      <div id="demo-precond-banner" class="demo-precond-banner" hidden></div>
-
-      <div class="demo-stage">
-        <!-- Hero Evidence Container (changes dynamically per slide) -->
-        <div id="demo-evidence" class="demo-evidence-panel"></div>
-
-        <!-- Live Security Decision Trace for active slide -->
-        <div id="demo-trace-box" class="demo-trace-box"></div>
-      </div>
-
-      <div class="demo-body">
-        <div class="demo-cols">
-          <div><div class="k">WHAT HAPPENED? (Technical Execution)</div><div id="demo-narration" class="v"></div></div>
-          <div><div class="k">WHY IS IT SECURE? (Security Invariants)</div><div id="demo-why-secure" class="v"></div></div>
-          <div><div class="k">WHY THIS MATTERS (Core Cryptography)</div><div id="demo-why" class="v muted"></div></div>
-          <div><div class="k">SECURITY PROPERTY</div><div id="demo-props" class="demo-props"></div></div>
-        </div>
-
-        <!-- Presenter Notes & Examiner Script (Collapsible) -->
-        <div id="demo-notes-drawer" class="demo-notes-drawer" hidden>
-          <div class="notes-head"><span class="eyebrow">EXAMINER PRESENTATION SCRIPT &amp; DEMO NOTES</span></div>
-          <div class="notes-grid">
-            <div class="note-box"><span class="k">WHAT TO SAY</span><p id="note-say" class="note-text"></p></div>
-            <div class="note-box"><span class="k">WHAT TO POINT AT</span><p id="note-point" class="note-text"></p></div>
-            <div class="note-box"><span class="k">SECURITY PRINCIPLE</span><p id="note-principle" class="note-text"></p></div>
-            <div class="note-box"><span class="k">NEXT RESULT</span><p id="note-next" class="note-text"></p></div>
-          </div>
-        </div>
-
-        <div class="demo-trace">
-          <div class="k">Behind the scenes · <span id="demo-trace-count">0 calls</span> <span class="faint">— every request, command and C event in this step</span></div>
-          <div id="demo-trace" class="demo-trace-list" role="log" aria-label="Background activity for this step"></div>
-        </div>
-      </div>
-    </section>
+    <!-- Live demonstration: 21 execution stages, rendered by js/demo.js from real results. -->
+    <section id="demo-panel" class="theater" hidden role="region" aria-label="Live cryptographic demonstration"></section>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </div>
 </body>

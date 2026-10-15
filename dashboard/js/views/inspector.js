@@ -85,6 +85,7 @@ export default {
   },
   select(id) { selected = id; },
   update() {
+    if (!$('#pi-count')) return;
     if (selected === null || !store.packets.some((p) => p.id === selected)) selected = store.packets[0]?.id ?? null;
     const key = `${selected}:${store.packets.length}:${store.packets[0]?.id}`;
     if (key === this.rendered) return;          // nothing new: keep scroll position

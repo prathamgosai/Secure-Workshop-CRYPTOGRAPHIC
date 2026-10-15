@@ -64,7 +64,7 @@ void fingerprint_str(char out[32], const unsigned char fp[FINGERPRINT_LEN]) {
 
 typedef struct { unsigned char pk[KX_PK_LEN], sk[KX_SK_LEN]; } kx_pair;
 
-static void mitm_plain(mitm_report *r) {
+void mitm_plain(mitm_report *r) {
     static const char msg[] = "PAY BOB 100", forged[] = "PAY MAL 900";
     kx_pair client, server, mallory;
     unsigned char c_rx[32], c_tx[32], s_rx[32], s_tx[32];
@@ -83,6 +83,8 @@ static void mitm_plain(mitm_report *r) {
              crypto_kx_server_session_keys(mc_rx, mc_tx, mallory.pk, mallory.sk, client.pk) == 0 &&
              crypto_kx_client_session_keys(ms_rx, ms_tx, mallory.pk, mallory.sk, server.pk) == 0;
 
+    r->plain_keys_swapped = ok;
+    memcpy(r->sent_text, msg, sizeof msg);
     n = seal(pkt, sizeof pkt, 1, (const unsigned char *)msg, strlen(msg), c_tx);
     if (ok && n && unseal(out, sizeof out - 1, &ol, pkt, n, mc_rx, &m_rs) == SC_OK) {
         r->plain_read = 1;
@@ -102,7 +104,7 @@ static void mitm_plain(mitm_report *r) {
     sodium_memzero(out, sizeof out);
 }
 
-static void mitm_signed(mitm_report *r) {
+void mitm_signed(mitm_report *r) {
     identity id, mal_id;
     kx_pair client, client2, server, mallory;
     unsigned char sig[SIG_LEN], mal_sig[SIG_LEN];

@@ -68,6 +68,7 @@ export default {
     if (!store.vault?.files?.[1]?.exists) { await run('keygen'); await engine('vault'); }
   },
   update() {
+    if (!$('#wr-chain')) return;
     $('#wr-chain').innerHTML = chain();
     $('#wr-outcomes').innerHTML = outcomes();
     $('#wr-params').innerHTML = params();

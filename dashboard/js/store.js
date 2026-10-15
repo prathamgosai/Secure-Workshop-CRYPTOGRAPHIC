@@ -49,19 +49,26 @@ function recordState(resp) {
   const first = (lvl) => evs.find((e) => e.level === lvl);
   if (resp.cmd === 'handshake' && resp.ok) {
     const init = evs[0];
-    store.stateLog.INIT = store.stateLog.INIT || { ts: init?.ts || Date.now(), msg: 'libsodium ready · ephemeral X25519 key pairs generated' };
+    store.stateLog.INIT = store.stateLog.INIT || { ts: init?.ts ?? null, msg: 'libsodium ready · ephemeral X25519 key pairs generated' };
     const auth = first('AUTH');
-    store.stateLog.AUTH = { ts: auth?.ts || Date.now(), msg: resp.mode === 'signed' ? 'public keys exchanged · Ed25519 signature verified · rx/tx derived' : 'public keys exchanged · rx/tx session keys derived' };
+    store.stateLog.AUTH = { ts: auth?.ts ?? null, msg: resp.mode === 'signed' ? 'public keys exchanged · Ed25519 signature verified · rx/tx derived' : 'public keys exchanged · rx/tx session keys derived' };
     const sec = first('SECURE');
-    store.stateLog.SECURE = { ts: sec?.ts || Date.now(), msg: 'AEAD packets active · replay window active · epoch 1' };
+    store.stateLog.SECURE = { ts: sec?.ts ?? null, msg: `AEAD packets active · replay window active · epoch ${s.epoch}` };
     store.stateLog.TERMINATE = null;
+  }
+  if (resp.cmd === 'hs' && resp.ok) {     // stepwise handshake (live demo)
+    const ts = evs[0]?.ts ?? null;
+    if (resp.step === 'begin') store.stateLog = { INIT: { ts, msg: 'fresh session · ephemeral X25519 key pairs generated' }, AUTH: null, SECURE: null, TERMINATE: null };
+    if (resp.step === 'derive') store.stateLog.AUTH = { ts, msg: 'crypto_kx rx/tx session keys derived · ephemeral secrets wiped' };
+    if (resp.step === 'auth') store.stateLog.AUTH = { ts, msg: 'keys derived · Ed25519 transcript signature verified' };
+    if (resp.step === 'secure') store.stateLog.SECURE = { ts, msg: `AEAD packets active · replay window active · epoch ${s.epoch}` };
   }
   if (s.state === 'TERMINATE' && prev !== 'TERMINATE') {
     const w = first('WIPE');
-    store.stateLog.TERMINATE = { ts: w?.ts || Date.now(), msg: w?.msg || 'secrets wiped · session closed' };
+    store.stateLog.TERMINATE = { ts: w?.ts ?? null, msg: w?.msg || 'secrets wiped · session closed' };
   }
   if (resp.cmd === 'reset') {
-    store.stateLog = { INIT: { ts: evs[0]?.ts || Date.now(), msg: 'session reset · awaiting handshake' }, AUTH: null, SECURE: null, TERMINATE: null };
+    store.stateLog = { INIT: { ts: evs[0]?.ts ?? null, msg: 'session reset · awaiting handshake' }, AUTH: null, SECURE: null, TERMINATE: null };
   }
 }
 
@@ -72,11 +79,11 @@ function capturePackets(resp) {
       id: ++packetId, ts: Date.now(), cmd: resp.cmd, attack: resp.attack?.id || null,
       label: st.label, rc: st.rc, verdict: st.verdict, reason: st.reason, rekeyed: st.rekeyed,
       // the user's own message, echoed by the engine only when unseal() returned 0
-      delivered: resp.cmd === 'send' && st.rc === 0 ? resp.delivered_text : undefined,
+      delivered: st.rc === 0 ? (resp.cmd === 'send' ? resp.delivered_text : st.plaintext) : undefined,
       ...st.packet,
     };
     store.packets.unshift(p);
-    if (resp.cmd === 'send' || resp.cmd === 'attack') store.deliveries.unshift(p);
+    if (['send', 'attack', 'deliver', 'intercept'].includes(resp.cmd)) store.deliveries.unshift(p);
   }
   if (store.packets.length > 200) store.packets.length = 200;
   if (store.deliveries.length > 50) store.deliveries.length = 50;
@@ -100,7 +107,7 @@ function traceEnd(t, resp) {
   Object.assign(t, {
     pending: false,
     ms: Math.round(performance.now() - t.t0),
-    ok: resp.ok !== false,
+    ok: resp.ok === true,
     error: resp.error || null,
     bridge: resp.bridge || null,
     after: store.session.state,
@@ -131,7 +138,13 @@ function summarize(kind, name, r) {
     case 'send': { const st = r.steps?.[0]; return st ? `seal(): ${st.packet.length} B packet, seq ${st.packet.seq} → unseal(): ${st.verdict} (rc ${st.rc})` : 'no packet'; }
     case 'attack': { const a = r.attack; return a ? `${a.title}: ${a.verdict} · rc ${a.rc} (expected ${a.expected_rc}) · ${a.pass ? 'behaved as expected' : 'UNEXPECTED'}` : 'no result'; }
     case 'wrap': return `${r.password?.startsWith('correct') ? 'correct' : 'wrong'} test passphrase · Argon2id ${r.memlimit_mib} MiB · ${r.password?.startsWith('correct') ? (r.unwrapped ? 'MAC verified, key unwrapped' : 'unwrap FAILED') : (r.secret_released ? 'secret RELEASED' : 'MAC failed, nothing released')}`;
-    case 'mitm': return `plain crypto_kx: MITM ${r.vulnerability_shown ? 'read and rewrote traffic (known limitation)' : 'did not succeed'} · signed handshake: ${r.extension_blocks_mitm ? 'all MITM variants blocked' : 'NOT all blocked'}`;
+    case 'hs': return `handshake step ${r.step}: ${r.state_before} → ${r.state_after} · rc ${r.rc}${typeof r.elapsed_ms === 'number' ? ` · ${fx(r.elapsed_ms)} ms inside C` : ''}`;
+    case 'seal': return r.packet ? `seal(): seq ${r.packet.seq} · ${r.packet.length} B packet held on the wire` : 'no packet';
+    case 'inspect': return r.checks ? `packet seq ${r.packet.seq} parsed read-only · length ${r.checks.length_ok ? 'OK' : 'BAD'} · plaintext ${r.checks.plaintext_not_visible ? 'not visible' : 'VISIBLE'}` : 'no packet';
+    case 'deliver': { const st = r.steps?.[0]; return st ? `unseal(): ${st.verdict} (rc ${st.rc}) · last_seq ${st.last_seq_before} → ${st.last_seq_after}` : 'no packet'; }
+    case 'intercept': { const a = r.attack; return a ? `${a.title}: ${a.verdict} · rc ${a.rc} (expected ${a.expected_rc}) · ${a.pass ? 'behaved as expected' : 'UNEXPECTED'}` : 'no result'; }
+    case 'unwrap': return `${r.password?.startsWith('correct') ? 'correct' : 'wrong'} test passphrase on the existing wrapped file · ${r.mac_verified ? 'MAC verified' : 'MAC failed, output zeroed: ' + (r.output_zeroed ? 'yes' : 'NO')}`;
+    case 'mitm': return [r.plain ? `plain crypto_kx: MITM ${r.vulnerability_shown ? 'read and rewrote traffic (known limitation)' : 'did not succeed'}` : null, r.signed ? `signed handshake: ${r.extension_blocks_mitm ? 'all MITM variants blocked' : 'NOT all blocked'}` : null].filter(Boolean).join(' · ');
     default: return s ? `state ${s.state} · epoch ${s.epoch}` : 'done';
   }
 }
@@ -150,7 +163,7 @@ export async function engine(cmd, arg) {
   if (resp.cmd === 'hello' && resp.ok) store.libsodium = resp.libsodium;
   if (resp.cmd === 'handshake') store.handshake = resp;
   if (resp.cmd === 'vault' && resp.ok) store.vault = resp;
-  if (resp.cmd === 'mitm' && resp.ok) store.mitm = resp;
+  if (resp.cmd === 'mitm' && resp.ok) store.mitm = { ...(store.mitm || {}), ...resp };
   if (resp.cmd === 'wrap' && resp.ok) {
     const which = resp.password.startsWith('correct') ? 'correct' : 'wrong';
     store.wrap[which] = resp;

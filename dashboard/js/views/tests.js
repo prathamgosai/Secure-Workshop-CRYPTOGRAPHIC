@@ -80,6 +80,7 @@ export default {
     this.update();
   },
   update() {
+    if (!$('#tc-val')) return;
     $('#tc-val').innerHTML = validation();
     $('#tc-req').innerHTML = testCards(store.tests, 'required suite', 'Run security tests');
     $('#tc-ext').innerHTML = testCards(store.testsExtended, 'extended suite', 'Run extended tests');

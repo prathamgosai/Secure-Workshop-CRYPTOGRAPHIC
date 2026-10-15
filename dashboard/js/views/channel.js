@@ -172,6 +172,7 @@ export default {
     notify('tcp');
   },
   update() {
+    if (!$('#ch-state')) return;
     const s = store.session;
     const secure = s.state === 'SECURE';
     $('#ch-state').innerHTML = `${chip(secure ? 'SECURE' : s.state === 'TERMINATE' ? 'TERMINATED' : s.state, { tone: secure ? 'ok' : s.state === 'TERMINATE' ? 'muted' : 'info', lg: true })}
@@ -193,11 +194,12 @@ export default {
     $('#ch-list').innerHTML = deliveries();
     $('#ch-epochs').innerHTML = epochs();
     const sel = $('#ch-every');
-    if (document.activeElement !== sel) sel.value = String([0, 2, 3, 5, 10].includes(s.rekey_every) ? s.rekey_every : 0);
+    if (sel && document.activeElement !== sel) sel.value = String([0, 2, 3, 5, 10].includes(s.rekey_every) ? s.rekey_every : 0);
     $('#tcp-status').innerHTML = `${chip(store.tcp.server ? 'RUNNING' : 'STOPPED', { text: `Server ${store.tcp.server ? 'running' : 'stopped'}` })}
       ${chip(store.tcp.client ? 'CONNECTED' : 'IDLE', { text: `Client ${store.tcp.client ? 'connected' : 'idle'}` })}`;
     for (const role of ['client', 'server']) {
       const el = $(`#tcp-${role}`);
+      if (!el) continue;
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
       el.innerHTML = tcpLogs(role);
       if (atBottom) el.scrollTop = el.scrollHeight;
