@@ -39,18 +39,19 @@ export function initBootSequence({ onEnterLab, onEnterCinema, onSkip }) {
       <div class="boot-eyebrow">APPLIED CRYPTOGRAPHIC DESIGN · C11 / LIBSODIUM / OPENSSL</div>
       <h1 class="boot-title">SECURE CHANNEL</h1>
       <div class="boot-sub">THE CRYPTOGRAPHIC CINEMATIC LAB</div>
-      <p class="boot-tagline">“Every Packet Tells a Story. Every Attack Has a Consequence.”</p>
-      <p class="boot-desc">Experience cryptographic security as a live, interactive network journey.</p>
+      <h2 class="boot-heading" style="font-size: 1.35rem; font-weight: 700; color: #00f0ff; margin: 12px 0 4px; letter-spacing: -0.01em;">Inside the Secure Channel.</h2>
+      <p class="boot-tagline">“Observe the Encryption. Follow the Packets. Challenge the Security. Verify the Results.”</p>
+      <p class="boot-desc">Explore the cryptographic mechanisms behind secure communication through a live, interactive security laboratory.</p>
 
       <div class="boot-actions">
-        <button id="boot-btn-cinema" class="btn-boot btn-boot-primary">
+        <button id="boot-btn-lab" class="btn-boot btn-boot-primary">
           <span class="btn-glow"></span>
-          <span class="btn-icon">🎬</span>
-          <span>START CINEMATIC JOURNEY</span>
-        </button>
-        <button id="boot-btn-lab" class="btn-boot btn-boot-secondary">
           <span class="btn-icon">⚡</span>
           <span>ENTER COMMAND CENTER</span>
+        </button>
+        <button id="boot-btn-cinema" class="btn-boot btn-boot-secondary">
+          <span class="btn-icon">🎬</span>
+          <span>START GUIDED EXPERIENCE</span>
         </button>
         <button id="boot-btn-skip" class="btn-boot btn-boot-ghost">
           <span>SKIP INTRO</span>

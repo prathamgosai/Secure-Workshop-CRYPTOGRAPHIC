@@ -25,21 +25,25 @@ import pipeline from './views/pipeline.js';
 const GROUPS = [
   ['Command Center', [landing, commandCenter, handshake, channel, inspector]],
   ['Security Lab', [attacks, tests, vault, wrap, openssl]],
-  ['System & Specs', [examiner, bench, logs, limits]],
+  ['System & Specs', [examiner, overview, bench, logs, limits]],
 ];
 const VIEWS = GROUPS.flatMap(([, vs]) => vs);
 const byId = Object.fromEntries(VIEWS.map((v) => [v.id, v]));
 byId['overview'] = landing;
 byId['landing'] = landing;
 byId['command_center'] = commandCenter;
+byId['command-center'] = commandCenter;
 byId['live-lab'] = commandCenter;
 byId['pipeline'] = commandCenter;
+byId['architecture'] = overview;
 
 const groupOf = Object.fromEntries(GROUPS.flatMap(([g, vs]) => vs.map((v) => [v.id, g])));
 groupOf['overview'] = 'Command Center';
 groupOf['landing'] = 'Command Center';
 groupOf['command_center'] = 'Command Center';
+groupOf['command-center'] = 'Command Center';
 groupOf['pipeline'] = 'Command Center';
+groupOf['architecture'] = 'System & Specs';
 let current = null;
 
 /* ---- routing ------------------------------------------------------------- */

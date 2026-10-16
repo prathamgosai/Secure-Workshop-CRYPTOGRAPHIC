@@ -1199,6 +1199,98 @@ export class NetworkEngine {
     return this.paused;
   }
 
+  triggerPacket(options = {}) {
+    const isAttack = !!options.isAttack;
+    const rc = options.rc !== undefined ? options.rc : 0;
+    const seq = options.seq !== undefined ? options.seq : 1;
+
+    let path = ['client_tx', 'aad_bind', 'chacha20_enc', 'wire_frame', 'len_guard', 'replay_guard', 'aead_verify', 'server_core'];
+    if (isAttack) {
+      if (options.attack === 'short' || rc === -1) {
+        path = ['client_tx', 'wire_frame', 'len_guard'];
+      } else if (options.attack === 'replay' || rc === -3) {
+        path = ['client_tx', 'wire_frame', 'len_guard', 'replay_guard'];
+      } else if (options.attack === 'tamper' || options.attack === 'aad' || options.attack === 'forged' || options.attack === 'wrongkey' || rc === -2) {
+        path = ['client_tx', 'wire_frame', 'len_guard', 'replay_guard', 'aead_verify'];
+      }
+    }
+
+    const color = isAttack ? '#ff0055' : (options.color || '#00f0ff');
+    const glowColor = isAttack ? 'rgba(255, 0, 85, 0.75)' : 'rgba(0, 240, 255, 0.75)';
+
+    this.packets.push({
+      path,
+      edgeIndex: 0,
+      t: 0,
+      seq,
+      isAttack,
+      rc,
+      color,
+      glowColor,
+      trail: [],
+      verdict: options.verdict || (isAttack ? 'BLOCKED' : 'ACCEPTED'),
+    });
+
+    // Start with a pulse at source node
+    const srcNode = path[0];
+    if (srcNode) this.spawnRadar(srcNode, color);
+  }
+
+  triggerAttack(attackType = 'tamper') {
+    this.mallory.active = true;
+    this.mallory.action = `INJECTING: ${attackType.toUpperCase()}`;
+
+    // Target laser to wire_frame
+    const wire = this.nodeMap.get('wire_frame');
+    if (wire) {
+      this.sceneLaser = {
+        active: true,
+        x1: this.mallory.x,
+        y1: this.mallory.y,
+        x2: wire.x + wire.w / 2,
+        y2: wire.y + wire.h / 2,
+        color: '#ff0055',
+        alpha: 1.0,
+      };
+    }
+
+    let rc = -2;
+    if (attackType === 'short') rc = -1;
+    else if (attackType === 'replay' || attackType === 'reorder') rc = -3;
+
+    this.triggerPacket({
+      seq: attackType === 'forged' ? '18446744073709551615' : attackType === 'aad' ? 1001 : 2,
+      isAttack: true,
+      attack: attackType,
+      rc,
+      verdict: rc === -3 ? 'REPLAY REJECTED' : rc === -1 ? 'SHORT PACKET' : 'AUTH FAILED',
+    });
+  }
+
+  triggerRekey() {
+    this.rekeyWave = {
+      active: true,
+      x: 475,
+      y: 190,
+      radius: 10,
+      maxRadius: 550,
+      alpha: 1.0,
+    };
+    this.spawnRadar('key_split', '#b8a6ff');
+    this.spawnRadar('key_wipe', '#b8a6ff');
+    this.spawnRadar('blake2b_kdf', '#b8a6ff');
+  }
+
+  triggerHandshake() {
+    this.spawnRadar('client_core', '#00f0ff');
+    this.spawnRadar('eph_kp', '#00f0ff');
+    this.spawnRadar('kx_exchange', '#b8a6ff');
+    this.spawnRadar('hs_sign', '#b8a6ff');
+    this.spawnRadar('hs_verify', '#39ff14');
+    this.spawnRadar('blake2b_kdf', '#b8a6ff');
+    this.spawnRadar('key_split', '#39ff14');
+  }
+
   focusScene(sceneId, info = {}) {
     this.activeScene = sceneId;
     this.mallory.active = false;

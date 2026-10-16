@@ -439,12 +439,7 @@ export default {
         const resp = await engine('attack', chosen);
         if (resp.ok && resp.attack) {
           const atk = resp.attack;
-          canvasEngine?.triggerPacket({
-            seq: atk.seq || 'ATK',
-            rc: atk.rc,
-            verdict: atk.result,
-            attack: chosen,
-          });
+          canvasEngine?.triggerAttack(chosen);
           toast(`Attack simulation [${chosen.toUpperCase()}]: ${atk.result} (rc ${atk.rc})`);
         } else {
           toast(resp.error || 'Attack failed', true);
@@ -461,8 +456,7 @@ export default {
       await busy(e.target, async () => {
         const resp = await engine('rekey');
         if (resp.ok) {
-          canvasEngine?.spawnRadar('key_split', '#b8a6ff');
-          canvasEngine?.spawnRadar('key_wipe', '#ff0055');
+          canvasEngine?.triggerRekey();
           toast(`Session re-keyed: advanced to Epoch ${resp.session.epoch}`);
         } else {
           toast(resp.error || 'Re-key failed', true);
@@ -475,7 +469,7 @@ export default {
       await busy(e.target, async () => {
         const resp = await engine('handshake', 'signed');
         if (resp.ok) {
-          canvasEngine?.triggerHandshake({ mode: 'signed', ok: true, authenticated: true });
+          canvasEngine?.triggerHandshake();
           toast('Signed Handshake established: state is now SECURE');
         } else {
           toast(resp.error || 'Handshake failed', true);

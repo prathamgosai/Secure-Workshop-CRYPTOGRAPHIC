@@ -31,28 +31,31 @@ export default {
             </div>
 
             <h1 class="hero-title">SECURE CHANNEL</h1>
-
             <div class="hero-subtitle">THE CRYPTOGRAPHIC CINEMATIC LAB</div>
+            <h2 class="hero-heading" style="font-size: 1.55rem; font-weight: 700; color: #00f0ff; margin: 12px 0 6px; letter-spacing: -0.01em;">Inside the Secure Channel.</h2>
 
             <p class="hero-tagline">
-              "Every Packet Tells a Story. Every Attack Has a Consequence."
+              "Observe the Encryption. Follow the Packets. Challenge the Security. Verify the Results."
             </p>
 
             <p class="hero-desc">
-              Experience cryptographic security as a live, interactive network journey.
+              Explore the cryptographic mechanisms behind secure communication through a live, interactive security laboratory.
               Observe the cryptographic handshake, follow authenticated AEAD packets through the wire,
               trigger adversarial attacks, and verify empirical defenses backed by real C binaries.
             </p>
 
             <div class="hero-actions">
-              <button id="hero-watch-demo" class="btn btn-hero-primary" style="background: linear-gradient(135deg, #00f0ff, #0088cc); color: #020c14; font-weight: 700; border-color: #00f0ff; box-shadow: 0 0 18px rgba(0,240,255,0.45);">
-                🎬 <span>START CINEMATIC JOURNEY</span>
+              <button id="hero-enter-lab" class="btn btn-hero-primary" style="background: linear-gradient(135deg, #00f0ff, #0088cc); color: #020c14; font-weight: 700; border-color: #00f0ff; box-shadow: 0 0 18px rgba(0,240,255,0.45);">
+                ${icons.channel || '⚡'} <span>ENTER COMMAND CENTER</span>
               </button>
-              <button id="hero-enter-lab" class="btn btn-hero-secondary">
-                ${icons.channel || ''} <span>ENTER COMMAND CENTER</span>
+              <button id="hero-watch-demo" class="btn btn-hero-secondary">
+                🎬 <span>START GUIDED EXPERIENCE</span>
               </button>
               <button id="hero-inspect-attacks" class="btn btn-hero-ghost">
                 ${icons.attacks || ''} <span>ATTACK LABORATORY</span>
+              </button>
+              <button id="hero-replay-boot" class="btn btn-hero-ghost" title="Replay Opening Cinematic Boot Sequence">
+                <span>↺ REPLAY INTRO</span>
               </button>
             </div>
 
@@ -396,6 +399,11 @@ export default {
 
     root.querySelector('#hero-inspect-attacks')?.addEventListener('click', () => {
       ctx.navigate('attacks', { focus: true });
+    });
+
+    root.querySelector('#hero-replay-boot')?.addEventListener('click', () => {
+      sessionStorage.removeItem('sc_boot_shown');
+      location.reload();
     });
   },
 
