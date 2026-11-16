@@ -10,5 +10,8 @@
     "check": "cd secure-workshop && npm run check",
     "test:ui": "cd secure-workshop && npm run test:ui",
     "audit": "cd secure-workshop && npm run audit"
+  },
+  "dependencies": {
+    "docx": "^9.15.4"
   }
 }
